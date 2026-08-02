@@ -1,0 +1,77 @@
+# Ukázkové konfigurace karty Winamp Media Player Card
+# Zkopíruj vybranou sekci do svého dashboardu (Raw configuration editor).
+
+views:
+  - title: Hudba
+    cards:
+      # --- 1. Minimální konfigurace -------------------------------------
+      - type: custom:ha-winamp-card
+        entity: media_player.obyvak
+
+      # --- 2. Klasický Winamp se vším všudy -----------------------------
+      - type: custom:ha-winamp-card
+        entity: media_player.obyvak
+        title: Obývák
+        theme: classic
+        visualizer: bars
+        show_visualizer: true
+        show_artwork: true
+        show_eq: true
+        show_playlist: true
+        show_browser: true
+        show_player_select: true
+
+      # --- 3. Kompaktní karta do postranního panelu ----------------------
+      - type: custom:ha-winamp-card
+        entity: media_player.kuchyne
+        title: Kuchyně
+        theme: modern
+        visualizer: vu
+        compact: true
+        show_eq: false
+        show_browser: false
+        storage_key: kuchyne
+
+      # --- 4. Rádio stanice, vlastní seznam ------------------------------
+      - type: custom:ha-winamp-card
+        entity: media_player.koupelna
+        title: Rádio
+        theme: amber
+        visualizer: dots
+        storage_key: radio
+        entities:
+          - media_player.koupelna
+          - media_player.loznice
+        stations:
+          - name: Radio Paradise - Main Mix
+            url: https://stream.radioparadise.com/mp3-192
+            genre: Eclectic
+          - name: Radio Paradise - Rock Mix
+            url: https://stream.radioparadise.com/rock-192
+            genre: Rock
+          - name: SomaFM - Groove Salad
+            url: https://ice1.somafm.com/groovesalad-128-mp3
+            genre: Downtempo
+          - name: FIP
+            url: https://icecast.radiofrance.fr/fip-midfi.mp3
+            genre: Eclectic
+
+      # --- 5. Přebírá barvy tvého HA tématu ------------------------------
+      - type: custom:ha-winamp-card
+        entity: media_player.spotify
+        title: Spotify
+        theme: ha
+        visualizer: wave
+        storage_key: spotify
+        favorites:
+          - name: Chill playlist
+            media_content_id: spotify:playlist:37i9dQZF1DX4WYpdgoIcn6
+            media_content_type: playlist
+
+      # --- 6. Neon / vaporwave varianty ---------------------------------
+      - type: custom:ha-winamp-card
+        entity: media_player.loznice
+        title: Ložnice
+        theme: neon
+        visualizer: mirror
+        storage_key: loznice
