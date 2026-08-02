@@ -6,7 +6,7 @@
  * No build step required - this file is the source.
  */
 
-const CARD_VERSION = "1.2.1";
+const CARD_VERSION = "1.3.0";
 
 /* ------------------------------------------------------------------ *
  * Constants
@@ -1030,7 +1030,7 @@ class RetroPlayerCard extends HTMLElement {
     this._browseLoading = false;
     this._rootSources = null;
     this._rbServer = null;
-    this._sp = { path: [], items: null, query: "", searched: false, dived: false };
+    this._sp = { path: [], items: null, query: "", searched: false, dived: false, homeItems: null, homePath: [] };
     this._rb = {
       view: "countries",
       country: null,
@@ -1965,6 +1965,20 @@ class RetroPlayerCard extends HTMLElement {
     return this._spotifySource();
   }
 
+  /**
+   * callWS never rejects when Home Assistant simply does not answer, which
+   * left the panel sitting on "Searching..." forever. Always race a timeout.
+   */
+  _ws(msg, ms = 15000) {
+    let timer;
+    return Promise.race([
+      this._hass.callWS(msg),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`no answer after ${ms / 1000}s`)), ms);
+      }),
+    ]).finally(() => clearTimeout(timer));
+  }
+
   _canBrowse(id) {
     const st = id && this._hass.states[id];
     return !!st && ((st.attributes.supported_features || 0) & SUPPORT.BROWSE_MEDIA) !== 0;
@@ -2028,6 +2042,7 @@ class RetroPlayerCard extends HTMLElement {
         <span class="hint">Play on</span>
         <select class="sp-target" style="flex:1 1 auto"></select>
       </div>
+      <div class="chips sp-quick"></div>
       <div class="crumbs sp-crumbs"></div>
       <div class="list sp-list"><div class="empty">Loading...</div></div>
       <div class="hint sp-hint"></div>
@@ -2069,6 +2084,39 @@ class RetroPlayerCard extends HTMLElement {
     this._spLoad(el);
   }
 
+  /**
+   * One-click shortcuts into the library root: playlists, liked songs, albums
+   * and whatever else the browse entity offers there.
+   */
+  _spQuick(el) {
+    const sp = this._sp;
+    const host = el.querySelector(".sp-quick");
+    if (!host) return;
+    const items = sp.homeItems || [];
+    const here = sp.path.map((p) => p.id).join(">");
+    host.innerHTML = items
+      .map((c, i) => {
+        const path = [...sp.homePath, { id: c.media_content_id }].map((p) => p.id).join(">");
+        const on = !sp.searched && here === path;
+        return `<button class="btn spq" data-i="${i}" aria-pressed="${on}">${esc(c.title)}</button>`;
+      })
+      .join("");
+    host.querySelectorAll(".spq").forEach((b) =>
+      b.addEventListener("click", () => {
+        const c = items[Number(b.dataset.i)];
+        sp.path = [
+          ...sp.homePath,
+          { id: c.media_content_id, type: c.media_content_type, title: c.title },
+        ];
+        sp.query = "";
+        sp.searched = false;
+        const q = el.querySelector(".sp-q");
+        if (q) q.value = "";
+        this._spLoad(el);
+      }),
+    );
+  }
+
   _spCrumbs(el) {
     const sp = this._sp;
     const c = el.querySelector(".sp-crumbs");
@@ -2101,12 +2149,14 @@ class RetroPlayerCard extends HTMLElement {
     list.innerHTML = `<div class="empty">Loading...</div>`;
     const cur = sp.path[sp.path.length - 1];
     try {
-      const res = await this._hass.callWS({
+      const seq = (this._spSeq = (this._spSeq || 0) + 1);
+      const res = await this._ws({
         type: "media_player/browse_media",
         entity_id: via,
         media_content_id: cur ? cur.id : "",
         media_content_type: cur ? cur.type || "" : "",
       });
+      if (seq !== this._spSeq) return;
       sp.items = (res && res.children) || [];
 
       // When browsing through a proxy player (Music Assistant), drop straight
@@ -2124,6 +2174,13 @@ class RetroPlayerCard extends HTMLElement {
         }
       }
       sp.dived = true;
+
+      // The first listing we land on is the library root - keep its folders as
+      // one-click shortcuts (Playlists, Liked Songs, Albums, ...).
+      if (!sp.homeItems) {
+        sp.homeItems = sp.items.filter((c) => c.can_expand);
+        sp.homePath = sp.path.slice();
+      }
       this._spRenderList(el);
     } catch (err) {
       console.error("[retro-player-card] spotify browse failed", err);
@@ -2157,22 +2214,61 @@ class RetroPlayerCard extends HTMLElement {
     const sp = this._sp;
     const query = sp.query.trim();
     if (!query) return this._toast("Type something to search for first");
+    const via = this._spBrowseEntity();
+    if (!via) return this._spNoBrowser(el);
     const list = el.querySelector(".sp-list");
-    list.innerHTML = `<div class="empty">Searching Spotify for "${esc(query)}"...</div>`;
-    try {
-      const res = await this._hass.callWS({
+
+    // Only the newest search may touch the DOM - a slow earlier one used to
+    // land afterwards and replace fresh results with stale ones.
+    const seq = (this._spSeq = (this._spSeq || 0) + 1);
+    const stale = () => seq !== this._spSeq;
+    list.innerHTML = `<div class="empty">Searching for "${esc(query)}"...</div>`;
+
+    const ask = (extra) =>
+      this._ws({
         type: "media_player/search_media",
-        entity_id: this._spBrowseEntity(),
+        entity_id: via,
         search_query: query,
+        ...extra,
       });
-      sp.items = (res && res.result) || [];
-      sp.searched = true;
-      this._spRenderList(el);
+
+    let res;
+    try {
+      res = await ask();
+      // Some integrations return nothing unless the wanted classes are named.
+      if (!stale() && !((res && res.result) || []).length) {
+        try {
+          const retry = await ask({
+            media_filter_classes: ["album", "artist", "playlist", "track", "music"],
+          });
+          if (((retry && retry.result) || []).length) res = retry;
+        } catch (e) {
+          /* older Home Assistant rejects the filter - keep the first answer */
+        }
+      }
     } catch (err) {
+      if (stale()) return;
       console.warn("[retro-player-card] spotify search failed", err);
+      const why = (err && (err.message || err.error)) || "unknown error";
+      list.innerHTML = `<div class="empty">
+        Search failed on <b>${esc(via)}</b>.<br />
+        <span class="sub">${esc(why)}</span><br /><br />
+        <span class="sub">The Spotify integration does not implement search at all;
+        a Music Assistant player does. Pick one under "Browse via" in settings,
+        or browse the shortcuts above instead.</span></div>`;
       sp.searched = false;
-      this._spRenderList(el);
-      this._toast("This player cannot search - filtering the current list instead");
+      return;
+    }
+
+    if (stale()) return;
+    const rows = (res && res.result) || [];
+    sp.items = rows;
+    sp.searched = true;
+    this._spRenderList(el);
+    if (!rows.length) {
+      list.innerHTML = `<div class="empty">Nothing found for "${esc(query)}"
+        on <b>${esc(via)}</b>.<br />
+        <span class="sub">Try fewer words, or browse the shortcuts above.</span></div>`;
     }
   }
 
@@ -2182,6 +2278,7 @@ class RetroPlayerCard extends HTMLElement {
     const hint = el.querySelector(".sp-hint");
     if (!list) return;
     this._spCrumbs(el);
+    this._spQuick(el);
     const q = sp.searched ? "" : sp.query.trim().toLowerCase();
     const rows = (sp.items || []).filter((c) => !q || (c.title || "").toLowerCase().includes(q));
 
@@ -3063,12 +3160,12 @@ class RetroPlayerCard extends HTMLElement {
     }
     on(".s-sp-src", "change", (e) => {
       set.spotifyEntity = e.target.value || null;
-      this._sp = { path: [], items: null, query: "", searched: false, dived: false };
+      this._sp = { path: [], items: null, query: "", searched: false, dived: false, homeItems: null, homePath: [] };
       persist(false);
     });
     on(".s-sp-via", "change", (e) => {
       set.spotifyBrowseEntity = e.target.value || null;
-      this._sp = { path: [], items: null, query: "", searched: false, dived: false };
+      this._sp = { path: [], items: null, query: "", searched: false, dived: false, homeItems: null, homePath: [] };
       persist(false);
     });
     on(".s-sp-tgt", "change", (e) => {

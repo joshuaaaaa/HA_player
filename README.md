@@ -197,12 +197,17 @@ zvládne kdykoliv. V hlavičce panelu je vidět `via <entita>`.
 Když přes Music Assistant, karta při prvním otevření rovnou skočí do jeho
 Spotify větve. Tlačítkem *Top* se dostaneš na skutečný kořen.
 
-- **Procházení knihovny** — playlisty, Made For You, naposledy přehrané, alba…
-  s drobečkovou navigací
+- **Zkratky knihovny** — nad seznamem je řádek tlačítek generovaný z toho, co
+  daná entita v kořeni nabízí: **Playlists**, **Liked Songs**, **Albums**,
+  Recently Played… Jedním klikem se dostaneš na uložené playlisty i na oblíbené
+  skladby, aktivní zkratka je zvýrazněná
+- **Procházení knihovny** s drobečkovou navigací
 - **Hledání** — tlačítko *Search* pošle dotaz do Home Assistantu
   (`media_player/search_media`) přes tutéž entitu. Samotná Spotify integrace
-  hledání **neimplementuje vůbec**, Music Assistant ano; když to entita neumí,
-  karta bez chyby přepne na filtrování aktuálního seznamu
+  hledání **neimplementuje vůbec**, Music Assistant ano. Když dotaz nic nevrátí,
+  karta ho zopakuje s `media_filter_classes` (některé integrace bez toho vrací
+  prázdno). Každý dotaz má 15s časový limit a pomalá starší odpověď už nikdy
+  nepřepíše novější výsledky
 - **Play on** — rozbalovací seznam určuje, kam se hudba pošle. Výchozí je
   samotná Spotify entita
 - **Hvězdičky** fungují stejně jako u rádií — barevná = uloženo
@@ -352,7 +357,7 @@ HACS stažený soubor **neaktualizuje sám**. Po nové verzi:
 2. V prohlížeči tvrdý refresh (**Ctrl+Shift+R**), na mobilu smaž cache
 
 Jestli běží nová verze poznáš v prohlížeči médií (📁) — vlevo nahoře je verze
-karty a entita, na které právě prohlížíš. Aktuální je **v1.2.1**.
+karty a entita, na které právě prohlížíš. Aktuální je **v1.3.0**.
 
 ---
 
