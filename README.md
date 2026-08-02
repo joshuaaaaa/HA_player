@@ -4,6 +4,8 @@ Vlastní Lovelace karta pro Home Assistant v **retro skin vzhledu MP3 přehráva
 z přelomu tisíciletí** – s vizualizací, ekvalizérem, rádii, oblíbenými, tématy
 vzhledu a exportem/importem nastavení.
 
+![Retro Media Player Card](docs/images/hero.png)
+
 ---
 
 ## ✨ Co karta umí
@@ -140,6 +142,14 @@ které už v Home Assistantu máš. Tlačítko 📁 (prohlížeč médií) autom
 
 Vše nalezené jde jedním kliknutím ⭐ uložit do oblíbených.
 
+| Prohlížeč médií | Rádia a oblíbené |
+|---|---|
+| ![Prohlížeč médií](docs/images/panel-browser.png) | ![Playlist s rádii](docs/images/panel-playlist.png) |
+
+| Ekvalizér | Nastavení |
+|---|---|
+| ![Ekvalizér](docs/images/panel-eq.png) | ![Nastavení](docs/images/panel-settings.png) |
+
 ---
 
 ## 🎨 Témata
@@ -156,6 +166,8 @@ Vše nalezené jde jedním kliknutím ⭐ uložit do oblíbených.
 | `ha` | Přebírá barvy tvého Home Assistant tématu |
 
 Téma se přepíná v nastavení karty (⚙️) nebo klíčem `theme` v YAML.
+
+![Všech osm témat](docs/images/themes.png)
 
 ---
 
