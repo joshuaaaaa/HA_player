@@ -1,9 +1,8 @@
-# 🎵 Winamp Media Player Card
+# 🎵 Retro Media Player Card
 
-Vlastní Lovelace karta pro Home Assistant ve stylu legendárního **Winampu** –
-s vizualizací, ekvalizérem, rádii, oblíbenými, tématy vzhledu a exportem/importem nastavení.
-
-> _It really whips the llama's ass._
+Vlastní Lovelace karta pro Home Assistant v **retro skin vzhledu MP3 přehrávačů
+z přelomu tisíciletí** – s vizualizací, ekvalizérem, rádii, oblíbenými, tématy
+vzhledu a exportem/importem nastavení.
 
 ---
 
@@ -11,9 +10,9 @@ s vizualizací, ekvalizérem, rádii, oblíbenými, tématy vzhledu a exportem/i
 
 | Funkce | Popis |
 |---|---|
-| 🎛 **Winamp vzhled** | Titulek, LCD displej s časem, běžící text (marquee), obal alba, klasická tlačítka |
+| 🎛 **Retro vzhled** | Titulek, LCD displej s časem, běžící text (marquee), obal alba, klasická tlačítka |
 | 📊 **Vizualizace** | 5 režimů: spektrum, zrcadlené spektrum, osciloskop, bodová matice, VU metry |
-| 🎨 **8 témat + HA téma** | Classic Winamp, Modern Dark, Neon Nights, Vaporwave, Terminal Green, Amber CRT, Light Minimal, Follow HA Theme |
+| 🎨 **8 témat + HA téma** | Classic Skin, Modern Dark, Neon Nights, Vaporwave, Terminal Green, Amber CRT, Light Minimal, Follow HA Theme |
 | ▶️ **Plné ovládání** | Play/pauza, stop, další/předchozí, shuffle, repeat, zapnutí/vypnutí, hlasitost, mute, přetáčení |
 | 🔊 **Výběr přehrávače** | Rozbalovací seznam všech `media_player` entit – hudbu pustíš kamkoliv |
 | 📻 **Rádia** | 10 předvolených stanic + vlastní stream URL; plná podpora integrace **Radio Browser** |
@@ -35,7 +34,7 @@ s vizualizací, ekvalizérem, rádii, oblíbenými, tématy vzhledu a exportem/i
    https://github.com/joshuaaaaa/HA_player
    ```
 4. Jako kategorii vyber **Dashboard** (dříve „Lovelace“ / „Plugin“) a klikni **Add**.
-5. Najdi **Winamp Media Player Card** v seznamu, dej **Download**.
+5. Najdi **Retro Media Player Card** v seznamu, dej **Download**.
 6. **Restartuj / obnov prohlížeč** (Ctrl+F5), aby se načetl nový JS.
 
 HACS zdroj přidá do Lovelace automaticky. Pokud používáš YAML režim dashboardu,
@@ -46,15 +45,15 @@ přidej zdroj ručně:
 lovelace:
   mode: yaml
   resources:
-    - url: /hacsfiles/HA_player/ha-winamp-card.js
+    - url: /hacsfiles/HA_player/ha-retro-player-card.js
       type: module
 ```
 
 ### Ruční instalace (bez HACS)
 
-1. Zkopíruj `dist/ha-winamp-card.js` do `config/www/ha-winamp-card.js`.
+1. Zkopíruj `dist/ha-retro-player-card.js` do `config/www/ha-retro-player-card.js`.
 2. **Nastavení → Dashboardy → ⋮ → Zdroje → Přidat zdroj**
-   - URL: `/local/ha-winamp-card.js`
+   - URL: `/local/ha-retro-player-card.js`
    - Typ: `JavaScript Module`
 
 ---
@@ -64,14 +63,14 @@ lovelace:
 Nejjednodušší konfigurace:
 
 ```yaml
-type: custom:ha-winamp-card
+type: custom:ha-retro-player-card
 entity: media_player.obyvak
 ```
 
 Plná konfigurace:
 
 ```yaml
-type: custom:ha-winamp-card
+type: custom:ha-retro-player-card
 entity: media_player.obyvak
 title: Obývák
 theme: classic
@@ -104,7 +103,7 @@ stations:
 | Klíč | Typ | Výchozí | Popis |
 |---|---|---|---|
 | `entity` | string | – | **Povinné.** Výchozí `media_player` entita |
-| `title` | string | `Winamp` | Text v titulkové liště |
+| `title` | string | `Retro Player` | Text v titulkové liště |
 | `theme` | string | `classic` | `classic`, `modern`, `neon`, `vapor`, `terminal`, `amber`, `light`, `ha` |
 | `visualizer` | string | `bars` | `bars`, `mirror`, `wave`, `dots`, `vu`, `off` |
 | `show_visualizer` | bool | `true` | Zobrazit vizualizaci |
@@ -147,7 +146,7 @@ Vše nalezené jde jedním kliknutím ⭐ uložit do oblíbených.
 
 | Téma | Popis |
 |---|---|
-| `classic` | Šedý Winamp 2.x se zeleným LCD |
+| `classic` | Šedý retro skin se zeleným LCD |
 | `modern` | Tmavé, čisté, modrý akcent |
 | `neon` | Černá + magenta/cyan záře |
 | `vapor` | Fialovo-růžová vaporwave |
@@ -164,7 +163,7 @@ Téma se přepíná v nastavení karty (⚙️) nebo klíčem `theme` v YAML.
 
 V panelu nastavení (⚙️ → **Backup & restore**):
 
-- **Export file** – stáhne `winamp-card-*.json` se všemi nastaveními, oblíbenými, stanicemi a EQ
+- **Export file** – stáhne `retro-player-card-*.json` se všemi nastaveními, oblíbenými, stanicemi a EQ
 - **Copy to clipboard** – to samé do schránky
 - **Import file** / **Import from text** – obnovení ze zálohy
 - **Reset to defaults** – smaže uložená nastavení a vrátí YAML výchozí hodnoty
@@ -173,7 +172,7 @@ Formát zálohy:
 
 ```json
 {
-  "app": "ha-winamp-card",
+  "app": "ha-retro-player-card",
   "version": 1,
   "exported": "2026-08-02T10:00:00.000Z",
   "settings": { "theme": "neon", "favorites": [], "stations": [], "eq": [] }
@@ -199,14 +198,14 @@ tlačítka režimů zvuku – ta zařízení skutečně přepínají.
 Karta čte `supported_features` entity. Co přehrávač neumí, se vypne.
 
 **Kde jsou uložená nastavení?**
-V `localStorage` prohlížeče pod klíčem `ha-winamp-card:<storage_key>`. Na jiném
+V `localStorage` prohlížeče pod klíčem `ha-retro-player-card:<storage_key>`. Na jiném
 zařízení použij export/import.
 
 ---
 
 ## 🛠 Vývoj
 
-Karta je jeden soubor bez build kroku – `dist/ha-winamp-card.js` je zároveň zdroj.
+Karta je jeden soubor bez build kroku – `dist/ha-retro-player-card.js` je zároveň zdroj.
 Stačí ho upravit a v prohlížeči udělat hard refresh.
 
 ---
@@ -215,5 +214,6 @@ Stačí ho upravit a v prohlížeči udělat hard refresh.
 
 MIT – viz [LICENSE](LICENSE).
 
-Winamp je ochranná známka svých vlastníků. Tento projekt je poctou původnímu přehrávači,
-není s ním nijak spojen.
+Veškerá grafika karty je vykreslená čistě přes CSS a canvas. Karta neobsahuje
+žádné cizí skiny, obrázky ani jiná díla třetích stran a není spojená s žádným
+existujícím produktem ani značkou.

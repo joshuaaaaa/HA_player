@@ -1,6 +1,6 @@
 {
-  "name": "Winamp Media Player Card",
-  "filename": "ha-winamp-card.js",
+  "name": "Retro Media Player Card",
+  "filename": "ha-retro-player-card.js",
   "render_readme": true,
   "homeassistant": "2023.9.0"
 }

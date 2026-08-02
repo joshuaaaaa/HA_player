@@ -28,4 +28,4 @@ jobs:
         with:
           node-version: "20"
       - name: Check card syntax
-        run: node --check dist/ha-winamp-card.js
+        run: node --check dist/ha-retro-player-card.js

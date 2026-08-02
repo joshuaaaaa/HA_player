@@ -1,6 +1,6 @@
 /*!
- * Winamp Media Player Card for Home Assistant
- * A Winamp-inspired Lovelace media player card with visualizer, themes,
+ * Retro Media Player Card for Home Assistant
+ * A retro-skin Lovelace media player card with visualizer, themes,
  * favorites, radio, media browsing and settings import/export.
  *
  * No build step required - this file is the source.
@@ -36,7 +36,7 @@ const SUPPORT = {
 
 const THEMES = {
   classic: {
-    name: "Classic Winamp",
+    name: "Classic Skin",
     vars: {
       "--wa-font": '"Lucida Console", "DejaVu Sans Mono", Consolas, monospace',
       "--wa-bg": "#232323",
@@ -427,7 +427,7 @@ const svg = (path, size = 16) =>
 
 class Store {
   constructor(key) {
-    this.key = `ha-winamp-card:${key || "default"}`;
+    this.key = `ha-retro-player-card:${key || "default"}`;
   }
 
   load() {
@@ -435,7 +435,7 @@ class Store {
       const raw = window.localStorage.getItem(this.key);
       return raw ? JSON.parse(raw) : {};
     } catch (e) {
-      console.warn("[winamp-card] could not read settings", e);
+      console.warn("[retro-player-card] could not read settings", e);
       return {};
     }
   }
@@ -444,7 +444,7 @@ class Store {
     try {
       window.localStorage.setItem(this.key, JSON.stringify(data));
     } catch (e) {
-      console.warn("[winamp-card] could not persist settings", e);
+      console.warn("[retro-player-card] could not persist settings", e);
     }
   }
 
@@ -937,9 +937,9 @@ input[type=checkbox] { accent-color: var(--wa-accent); width:15px; height:15px; 
  * The card
  * ------------------------------------------------------------------ */
 
-class WinampCard extends HTMLElement {
+class RetroPlayerCard extends HTMLElement {
   static getConfigElement() {
-    return document.createElement("ha-winamp-card-editor");
+    return document.createElement("ha-retro-player-card-editor");
   }
 
   static getStubConfig(hass) {
@@ -947,7 +947,7 @@ class WinampCard extends HTMLElement {
       hass && hass.states
         ? Object.keys(hass.states).find((e) => e.startsWith("media_player."))
         : undefined;
-    return { type: "custom:ha-winamp-card", entity: first || "", theme: "classic" };
+    return { type: "custom:ha-retro-player-card", entity: first || "", theme: "classic" };
   }
 
   constructor() {
@@ -972,7 +972,7 @@ class WinampCard extends HTMLElement {
     if (!config) throw new Error("Invalid configuration");
     this._config = {
       entity: "",
-      title: "Winamp",
+      title: "Retro Player",
       theme: "classic",
       visualizer: "bars",
       show_visualizer: true,
@@ -1139,7 +1139,7 @@ class WinampCard extends HTMLElement {
     return this._hass
       .callService("media_player", service, { entity_id: this._entityId, ...data })
       .catch((err) => {
-        console.error("[winamp-card] service failed", service, err);
+        console.error("[retro-player-card] service failed", service, err);
         this._toast("Command failed: " + service);
       });
   }
@@ -1174,7 +1174,7 @@ class WinampCard extends HTMLElement {
       <style>${STYLES}</style>
       <div class="wa${s.compact ? " compact" : ""}">
         <div class="titlebar">
-          <span class="brand">${esc(this._config.title || "Winamp")}</span>
+          <span class="brand">${esc(this._config.title || "Retro Player")}</span>
           <span class="spacer"></span>
           <select class="player-select" title="Playback device"></select>
           <button class="tbtn" data-panel="eq" title="Equalizer">${svg(ICONS.eq, 14)}</button>
@@ -1855,7 +1855,7 @@ class WinampCard extends HTMLElement {
       this._browseItems = res;
       this._renderBrowseList(el, res);
     } catch (err) {
-      console.error("[winamp-card] browse failed", err);
+      console.error("[retro-player-card] browse failed", err);
       list.innerHTML = `<div class="empty">Could not browse: ${esc(
         (err && (err.message || err.error)) || "unknown error",
       )}</div>`;
@@ -2104,7 +2104,7 @@ class WinampCard extends HTMLElement {
 
     /* --- export / import --- */
     const payload = () => ({
-      app: "ha-winamp-card",
+      app: "ha-retro-player-card",
       version: 1,
       exported: new Date().toISOString(),
       settings: this._settings,
@@ -2116,7 +2116,7 @@ class WinampCard extends HTMLElement {
       });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `winamp-card-${(this._config.storage_key || "settings").replace(/\W+/g, "-")}.json`;
+      a.download = `retro-player-card-${(this._config.storage_key || "settings").replace(/\W+/g, "-")}.json`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 1000);
       el.querySelector(".s-json").value = JSON.stringify(payload(), null, 2);
@@ -2179,7 +2179,7 @@ class WinampCard extends HTMLElement {
  * Visual editor
  * ------------------------------------------------------------------ */
 
-class WinampCardEditor extends HTMLElement {
+class RetroPlayerCardEditor extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
@@ -2250,7 +2250,7 @@ class WinampCardEditor extends HTMLElement {
             </select>
           </label>
           <label class="field">Card title
-            <input type="text" data-key="title" value="${esc(c.title || "")}" placeholder="Winamp" />
+            <input type="text" data-key="title" value="${esc(c.title || "")}" placeholder="Retro Player" />
           </label>
           <label class="field">Default theme
             <select data-key="theme">
@@ -2320,27 +2320,27 @@ class WinampCardEditor extends HTMLElement {
  * Registration
  * ------------------------------------------------------------------ */
 
-if (!customElements.get("ha-winamp-card")) {
-  customElements.define("ha-winamp-card", WinampCard);
+if (!customElements.get("ha-retro-player-card")) {
+  customElements.define("ha-retro-player-card", RetroPlayerCard);
 }
-if (!customElements.get("ha-winamp-card-editor")) {
-  customElements.define("ha-winamp-card-editor", WinampCardEditor);
+if (!customElements.get("ha-retro-player-card-editor")) {
+  customElements.define("ha-retro-player-card-editor", RetroPlayerCardEditor);
 }
 
 window.customCards = window.customCards || [];
-if (!window.customCards.some((c) => c.type === "ha-winamp-card")) {
+if (!window.customCards.some((c) => c.type === "ha-retro-player-card")) {
   window.customCards.push({
-    type: "ha-winamp-card",
-    name: "Winamp Media Player Card",
+    type: "ha-retro-player-card",
+    name: "Retro Media Player Card",
     description:
-      "Winamp-inspired media player with visualizer, themes, radio, favorites and import/export.",
+      "Retro-skin media player with visualizer, themes, radio, favorites and import/export.",
     preview: true,
     documentationURL: "https://github.com/joshuaaaaa/HA_player",
   });
 }
 
 console.info(
-  `%c WINAMP-MEDIA-PLAYER-CARD %c v${CARD_VERSION} `,
+  `%c RETRO-MEDIA-PLAYER-CARD %c v${CARD_VERSION} `,
   "color:#0a0f0a;background:#00ff4c;font-weight:700",
   "color:#00ff4c;background:#0a0f0a",
 );

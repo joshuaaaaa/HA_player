@@ -1,15 +1,15 @@
-# Ukázkové konfigurace karty Winamp Media Player Card
+# Ukázkové konfigurace karty Retro Media Player Card
 # Zkopíruj vybranou sekci do svého dashboardu (Raw configuration editor).
 
 views:
   - title: Hudba
     cards:
       # --- 1. Minimální konfigurace -------------------------------------
-      - type: custom:ha-winamp-card
+      - type: custom:ha-retro-player-card
         entity: media_player.obyvak
 
-      # --- 2. Klasický Winamp se vším všudy -----------------------------
-      - type: custom:ha-winamp-card
+      # --- 2. Klasický retro vzhled se vším všudy -----------------------------
+      - type: custom:ha-retro-player-card
         entity: media_player.obyvak
         title: Obývák
         theme: classic
@@ -22,7 +22,7 @@ views:
         show_player_select: true
 
       # --- 3. Kompaktní karta do postranního panelu ----------------------
-      - type: custom:ha-winamp-card
+      - type: custom:ha-retro-player-card
         entity: media_player.kuchyne
         title: Kuchyně
         theme: modern
@@ -33,7 +33,7 @@ views:
         storage_key: kuchyne
 
       # --- 4. Rádio stanice, vlastní seznam ------------------------------
-      - type: custom:ha-winamp-card
+      - type: custom:ha-retro-player-card
         entity: media_player.koupelna
         title: Rádio
         theme: amber
@@ -57,7 +57,7 @@ views:
             genre: Eclectic
 
       # --- 5. Přebírá barvy tvého HA tématu ------------------------------
-      - type: custom:ha-winamp-card
+      - type: custom:ha-retro-player-card
         entity: media_player.spotify
         title: Spotify
         theme: ha
@@ -69,7 +69,7 @@ views:
             media_content_type: playlist
 
       # --- 6. Neon / vaporwave varianty ---------------------------------
-      - type: custom:ha-winamp-card
+      - type: custom:ha-retro-player-card
         entity: media_player.loznice
         title: Ložnice
         theme: neon
