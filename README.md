@@ -175,15 +175,34 @@ integrace hledání podle jména nenabízí ve všech verzích.
 ## 🟢 Spotify
 
 Tlačítko 🟢 otevře vlastní Spotify panel. Karta **nemá vlastní API klíče ani
-přihlašování** — používá `media_player` entitu z oficiální
-[Spotify integrace](https://www.home-assistant.io/integrations/spotify/), kterou
-si najde sama (podle platformy entity, jména nebo `app_name`).
+přihlašování** — používá `media_player` entity, které už v Home Assistantu máš.
+
+### ⚠️ Důležité: Spotify entita jde procházet jen když zrovna hraje
+
+Tohle je omezení Home Assistantu, ne karty. Integrace Spotify hlásí své
+schopnosti takhle:
+
+```python
+if product != PREMIUM:                       return 0            # žádné funkce
+if not currently_playing or is_restricted:   return SELECT_SOURCE # jen výběr zdroje
+return SUPPORT_SPOTIFY                                            # včetně procházení
+```
+
+Takže **nečinná Spotify entita procházení vůbec nenabízí** a HA odpoví
+*„Player does not support browsing media"*. Karta se s tím vypořádá sama:
+vybere entitu, která procházet **umí** — přednostně Spotify (když zrovna hraje),
+jinak přehrávač z **Music Assistantu** se Spotify providerem, který knihovnu
+zvládne kdykoliv. V hlavičce panelu je vidět `via <entita>`.
+
+Když přes Music Assistant, karta při prvním otevření rovnou skočí do jeho
+Spotify větve. Tlačítkem *Top* se dostaneš na skutečný kořen.
 
 - **Procházení knihovny** — playlisty, Made For You, naposledy přehrané, alba…
   s drobečkovou navigací
 - **Hledání** — tlačítko *Search* pošle dotaz do Home Assistantu
-  (`media_player/search_media`). Na starších verzích HA, které to neumí, karta
-  bez chyby přepne na filtrování aktuálního seznamu
+  (`media_player/search_media`) přes tutéž entitu. Samotná Spotify integrace
+  hledání **neimplementuje vůbec**, Music Assistant ano; když to entita neumí,
+  karta bez chyby přepne na filtrování aktuálního seznamu
 - **Play on** — rozbalovací seznam určuje, kam se hudba pošle. Výchozí je
   samotná Spotify entita
 - **Hvězdičky** fungují stejně jako u rádií — barevná = uloženo
@@ -195,8 +214,13 @@ si najde sama (podle platformy entity, jména nebo `app_name`).
 > z **Music Assistant** se Spotify providerem. Poslat `spotify:` URI na obyčejný
 > Chromecast nebo Kodi nefunguje a karta to řekne.
 
-V nastavení (⚙️) je sekce **Spotify**, kde jde ručně vybrat účet (entitu) i
-výchozí cílový přehrávač, kdyby automatická detekce vybrala špatně.
+V nastavení (⚙️) je sekce **Spotify** se třemi volbami: účet (Spotify entita),
+**Browse via** (kterou entitou procházet) a výchozí cílový přehrávač — kdyby
+automatika vybrala špatně.
+
+**Nevidíš nic?** Buď nemáš Premium, nebo na Spotify zrovna nic nehraje a zároveň
+nemáš Music Assistant. Pusť si v Spotify aplikaci cokoliv a panel začne fungovat,
+nebo nainstaluj Music Assistant se Spotify providerem.
 
 ### Proč ne napřímo přes Spotify Web API
 
@@ -328,7 +352,7 @@ HACS stažený soubor **neaktualizuje sám**. Po nové verzi:
 2. V prohlížeči tvrdý refresh (**Ctrl+Shift+R**), na mobilu smaž cache
 
 Jestli běží nová verze poznáš v prohlížeči médií (📁) — vlevo nahoře je verze
-karty a entita, na které právě prohlížíš. Aktuální je **v1.2.0**.
+karty a entita, na které právě prohlížíš. Aktuální je **v1.2.1**.
 
 ---
 

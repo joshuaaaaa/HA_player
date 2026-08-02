@@ -6,7 +6,7 @@
  * No build step required - this file is the source.
  */
 
-const CARD_VERSION = "1.2.0";
+const CARD_VERSION = "1.2.1";
 
 /* ------------------------------------------------------------------ *
  * Constants
@@ -383,6 +383,7 @@ const DEFAULT_SETTINGS = {
   showRadioButton: true,
   showSpotifyButton: true,
   spotifyEntity: null,
+  spotifyBrowseEntity: null,
   spotifyTarget: null,
   audioOnly: true,
   showPlayerSelect: true,
@@ -1029,7 +1030,7 @@ class RetroPlayerCard extends HTMLElement {
     this._browseLoading = false;
     this._rootSources = null;
     this._rbServer = null;
-    this._sp = { path: [], items: null, query: "", searched: false };
+    this._sp = { path: [], items: null, query: "", searched: false, dived: false };
     this._rb = {
       view: "countries",
       country: null,
@@ -1964,6 +1965,40 @@ class RetroPlayerCard extends HTMLElement {
     return this._spotifySource();
   }
 
+  _canBrowse(id) {
+    const st = id && this._hass.states[id];
+    return !!st && ((st.attributes.supported_features || 0) & SUPPORT.BROWSE_MEDIA) !== 0;
+  }
+
+  /**
+   * Which entity to browse Spotify content with.
+   *
+   * The Spotify integration only advertises BROWSE_MEDIA for Premium accounts
+   * *while something is actively playing on an unrestricted device* - an idle
+   * Spotify entity reports SELECT_SOURCE and nothing else, so browsing it
+   * fails with "Player does not support browsing media". A Music Assistant
+   * player with the Spotify provider can browse the same library at any time,
+   * so prefer whatever actually works right now.
+   */
+  _spBrowseEntity() {
+    if (!this._hass) return null;
+    const saved = this._settings.spotifyBrowseEntity;
+    if (saved && this._hass.states[saved]) return saved;
+    const src = this._spotifySource();
+    if (this._canBrowse(src)) return src;
+    const ents = this._hass.entities || {};
+    const ids = Object.keys(this._hass.states).filter(
+      (id) => id.startsWith("media_player.") && this._canBrowse(id),
+    );
+    const platform = (id) => ((ents[id] || {}).platform || "").toLowerCase();
+    return (
+      ids.find((id) => platform(id).includes("music_assistant") || platform(id) === "mass") ||
+      (this._canBrowse(this._entityId) ? this._entityId : null) ||
+      ids[0] ||
+      null
+    );
+  }
+
   _renderSpotify(el) {
     const src = this._spotifySource();
     const sp = this._sp;
@@ -1974,12 +2009,13 @@ class RetroPlayerCard extends HTMLElement {
       return;
     }
 
+    const via = this._spBrowseEntity();
     el.innerHTML = `
       <div class="panel-head">
         <span class="panel-title">Spotify</span>
-        <span class="hint sp-src">${esc(src)}</span>
+        <span class="hint sp-src">via ${esc(via || "-")}</span>
         <span class="grow"></span>
-        <button class="btn sp-home" title="Library root">${svg(ICONS.back, 13)} Library</button>
+        <button class="btn sp-home" title="Top of the browse tree">${svg(ICONS.back, 13)} Top</button>
         <button class="btn sp-reload" title="Reload">&#8635;</button>
       </div>
       <div class="row">
@@ -2025,6 +2061,7 @@ class RetroPlayerCard extends HTMLElement {
       sp.path = [];
       sp.query = "";
       sp.searched = false;
+      sp.dived = true; // show the real root, do not jump back into Spotify
       this._spLoad(el);
     });
     el.querySelector(".sp-reload").addEventListener("click", () => this._spLoad(el));
@@ -2058,25 +2095,62 @@ class RetroPlayerCard extends HTMLElement {
     const sp = this._sp;
     const list = el.querySelector(".sp-list");
     if (!list) return;
+    const via = this._spBrowseEntity();
     sp.searched = false;
+    if (!via) return this._spNoBrowser(el);
     list.innerHTML = `<div class="empty">Loading...</div>`;
     const cur = sp.path[sp.path.length - 1];
-    const msg = {
-      type: "media_player/browse_media",
-      entity_id: this._spotifySource(),
-      media_content_id: cur ? cur.id : "",
-      media_content_type: cur ? cur.type || "" : "",
-    };
     try {
-      const res = await this._hass.callWS(msg);
+      const res = await this._hass.callWS({
+        type: "media_player/browse_media",
+        entity_id: via,
+        media_content_id: cur ? cur.id : "",
+        media_content_type: cur ? cur.type || "" : "",
+      });
       sp.items = (res && res.children) || [];
+
+      // When browsing through a proxy player (Music Assistant), drop straight
+      // into its Spotify branch the first time instead of showing its own root.
+      if (!cur && !sp.dived && via !== this._spotifySource()) {
+        sp.dived = true;
+        const hit = sp.items.find((c) => c.can_expand && /spotify/i.test(c.title || ""));
+        if (hit) {
+          sp.path.push({
+            id: hit.media_content_id,
+            type: hit.media_content_type,
+            title: hit.title,
+          });
+          return this._spLoad(el);
+        }
+      }
+      sp.dived = true;
       this._spRenderList(el);
     } catch (err) {
       console.error("[retro-player-card] spotify browse failed", err);
-      list.innerHTML = `<div class="empty">Could not load your Spotify library.<br />
-        <span class="sub">${esc((err && (err.message || err.error)) || "unknown error")}</span></div>`;
-      this._spCrumbs(el);
+      this._spNoBrowser(el, err, via);
     }
+  }
+
+  _spNoBrowser(el, err, via) {
+    const list = el.querySelector(".sp-list");
+    if (!list) return;
+    const src = this._spotifySource();
+    const spotifyItself = via && via === src;
+    list.innerHTML = `
+      <div class="empty">
+        Could not browse Spotify${via ? ` through <b>${esc(via)}</b>` : ""}.
+        ${err ? `<br /><span class="sub">${esc((err.message || err.error) || "unknown error")}</span>` : ""}
+        ${
+          spotifyItself || !via
+            ? `<br /><br /><span class="sub">Home Assistant only lets you browse the Spotify
+                 entity while it is <b>actively playing</b> on an unrestricted device, and only
+                 on a <b>Premium</b> account. Start playback in the Spotify app once, or install
+                 <b>Music Assistant</b> with the Spotify provider - this panel will then browse
+                 through it at any time.</span>`
+            : `<br /><span class="sub">Pick a different player under "Browse via" in settings.</span>`
+        }
+      </div>`;
+    this._spCrumbs(el);
   }
 
   async _spSearch(el) {
@@ -2088,7 +2162,7 @@ class RetroPlayerCard extends HTMLElement {
     try {
       const res = await this._hass.callWS({
         type: "media_player/search_media",
-        entity_id: this._spotifySource(),
+        entity_id: this._spBrowseEntity(),
         search_query: query,
       });
       sp.items = (res && res.result) || [];
@@ -2098,7 +2172,7 @@ class RetroPlayerCard extends HTMLElement {
       console.warn("[retro-player-card] spotify search failed", err);
       sp.searched = false;
       this._spRenderList(el);
-      this._toast("Search needs a newer Home Assistant - filtering this list instead");
+      this._toast("This player cannot search - filtering the current list instead");
     }
   }
 
@@ -2875,6 +2949,15 @@ class RetroPlayerCard extends HTMLElement {
                 .join("")}
             </select>
           </label>
+          <label class="field">Browse Spotify via
+            <select class="s-sp-via">
+              <option value="">(pick automatically)</option>
+              ${this._players()
+                .filter((p) => this._canBrowse(p.id))
+                .map((p) => opt(p.id, p.name, set.spotifyBrowseEntity || ""))
+                .join("")}
+            </select>
+          </label>
           <label class="field">Play Spotify on
             <select class="s-sp-tgt">
               <option value="">(the Spotify entity itself)</option>
@@ -2884,7 +2967,10 @@ class RetroPlayerCard extends HTMLElement {
             </select>
           </label>
           <div class="hint">
-            Detected: <code>${esc(this._spotifySource() || "none")}</code>.
+            Account: <code>${esc(this._spotifySource() || "none")}</code>,
+            browsing via <code>${esc(this._spBrowseEntity() || "nothing")}</code>.
+            The Spotify entity can only be browsed while it is actively playing on a
+            Premium account, so a Music Assistant player is used when available.
             Spotify plays only on Spotify Connect devices or players that support
             it, such as Music Assistant with the Spotify provider.
           </div>
@@ -2977,7 +3063,12 @@ class RetroPlayerCard extends HTMLElement {
     }
     on(".s-sp-src", "change", (e) => {
       set.spotifyEntity = e.target.value || null;
-      this._sp = { path: [], items: null, query: "", searched: false };
+      this._sp = { path: [], items: null, query: "", searched: false, dived: false };
+      persist(false);
+    });
+    on(".s-sp-via", "change", (e) => {
+      set.spotifyBrowseEntity = e.target.value || null;
+      this._sp = { path: [], items: null, query: "", searched: false, dived: false };
       persist(false);
     });
     on(".s-sp-tgt", "change", (e) => {
