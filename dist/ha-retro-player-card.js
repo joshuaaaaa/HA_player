@@ -945,6 +945,13 @@ input[type=checkbox] { accent-color: var(--wa-accent); width:15px; height:15px; 
 .item .sub { opacity:.6; font-size:10px; white-space:nowrap; }
 .item .acts { display:flex; gap:2px; opacity:0; }
 .item:hover .acts, .item.active .acts { opacity:1; }
+/* favourite stars stay visible so an already-saved station is obvious */
+.item .acts.always { opacity:1; }
+.item .acts.always .iconbtn { opacity:.35; }
+.item:hover .acts.always .iconbtn { opacity:.8; }
+.item .acts.always .iconbtn.fav-on,
+.item .acts.always .iconbtn.fav-on:hover { opacity:1; color: var(--wa-accent-2); }
+.item.active .acts.always .iconbtn.fav-on { color: var(--wa-lcd-bg); }
 .iconbtn { display:inline-flex; align-items:center; justify-content:center;
   width:22px; height:20px; cursor:pointer; color:inherit;
   background:transparent; border:1px solid transparent; border-radius:2px; }
@@ -1813,17 +1820,14 @@ class RetroPlayerCard extends HTMLElement {
     el.querySelector(".add-cur").addEventListener("click", () => {
       const s = this._stateObj;
       if (!s || !s.attributes.media_content_id) return this._toast("Nothing to add");
-      set.favorites.push({
-        id: uid(),
+      this._toggleFav({
         name: this._title(),
         url: s.attributes.media_content_id,
         media_content_type: s.attributes.media_content_type || "music",
         thumbnail: s.attributes.entity_picture || null,
       });
-      this._saveSettings();
       this._browserTab = "favorites";
       this._renderPlaylist(el);
-      this._toast("Added to favorites");
     });
 
     const reset = el.querySelector(".reset-stations");
@@ -1834,6 +1838,52 @@ class RetroPlayerCard extends HTMLElement {
         this._renderPlaylist(el);
         this._toast("Default stations restored");
       });
+  }
+
+  /** Favourites are keyed by whatever we would hand to play_media. */
+  _favKey(item) {
+    return item ? item.media_content_id || item.url || item.playId || null : null;
+  }
+
+  _isFav(key) {
+    return key ? this._settings.favorites.some((f) => this._favKey(f) === key) : false;
+  }
+
+  /** Returns true when the entry ended up saved, false when it was removed. */
+  _toggleFav(entry) {
+    const key = this._favKey(entry);
+    if (!key) {
+      this._toast("Nothing to save");
+      return false;
+    }
+    const favs = this._settings.favorites;
+    const i = favs.findIndex((f) => this._favKey(f) === key);
+    if (i >= 0) {
+      favs.splice(i, 1);
+      this._saveSettings();
+      this._toast("Removed from favorites");
+      return false;
+    }
+    favs.push({ id: uid(), ...entry });
+    this._saveSettings();
+    this._toast("Added to favorites");
+    return true;
+  }
+
+  /** Star button markup reflecting whether the item is already saved. */
+  _favButton(key) {
+    const on = this._isFav(key);
+    return `<button class="iconbtn${on ? " fav-on" : ""}" data-act="fav"
+      title="${on ? "Remove from favorites" : "Add to favorites"}">${svg(
+        on ? ICONS.star : ICONS.starOff,
+        13,
+      )}</button>`;
+  }
+
+  _paintFav(btn, on) {
+    btn.classList.toggle("fav-on", on);
+    btn.title = on ? "Remove from favorites" : "Add to favorites";
+    btn.innerHTML = svg(on ? ICONS.star : ICONS.starOff, 13);
   }
 
   _hasService(domain, service) {
@@ -2225,9 +2275,7 @@ class RetroPlayerCard extends HTMLElement {
         }
         <span class="nm">${esc(s.name)}</span>
         <span class="sub">${esc(s.meta || "")}</span>
-        <span class="acts">
-          <button class="iconbtn" data-act="fav" title="Add to favorites">${svg(ICONS.star, 13)}</button>
-        </span>
+        <span class="acts always">${this._favButton(s.playId)}</span>
       </div>`,
           )
           .join("")
@@ -2241,16 +2289,14 @@ class RetroPlayerCard extends HTMLElement {
         const act = e.target.closest("[data-act]");
         if (act) {
           e.stopPropagation();
-          this._settings.favorites.push({
-            id: uid(),
+          const on = this._toggleFav({
             name: st.name,
             media_content_id: st.playId,
             media_content_type: st.playType,
             thumbnail: st.favicon || null,
             genre: st.meta || "",
           });
-          this._saveSettings();
-          this._toast("Added to favorites");
+          this._paintFav(act, on);
           return;
         }
         this._playItem({
@@ -2269,31 +2315,6 @@ class RetroPlayerCard extends HTMLElement {
 
   /* --- Media browser panel --- */
 
-  /**
-   * Spotify and Music Assistant do not register a `media-source://` provider -
-   * their libraries are browsable only on their own media_player entities.
-   * Find those entities so the panel can offer to jump straight to them.
-   */
-  _streamingPlayers() {
-    if (!this._hass) return [];
-    const ents = this._hass.entities || {};
-    const out = [];
-    for (const id of Object.keys(this._hass.states)) {
-      if (!id.startsWith("media_player.")) continue;
-      const platform = ((ents[id] && ents[id].platform) || "").toLowerCase();
-      const st = this._hass.states[id];
-      const app = (st.attributes.app_name || "").toLowerCase();
-      let kind = null;
-      if (platform === "spotify" || app === "spotify" || id.startsWith("media_player.spotify")) {
-        kind = "Spotify";
-      } else if (platform === "music_assistant" || platform === "mass") {
-        kind = "Music Assistant";
-      }
-      if (kind) out.push({ id, kind, name: st.attributes.friendly_name || id });
-    }
-    return out;
-  }
-
   _renderBrowser(el) {
     const supportsBrowse = this._supports(SUPPORT.BROWSE_MEDIA);
     el.innerHTML = `
@@ -2305,7 +2326,6 @@ class RetroPlayerCard extends HTMLElement {
         <button class="btn br-reload" title="Reload">&#8635;</button>
       </div>
       <div class="chips shortcuts"></div>
-      <div class="chips players"></div>
       <div class="crumbs"></div>
       <div class="list browse-list">
         <div class="empty">${supportsBrowse ? "Loading..." : "This player does not support media browsing."}</div>
@@ -2318,8 +2338,8 @@ class RetroPlayerCard extends HTMLElement {
       <div class="hint">
         The chips above are your player's own sources. <b>Spotify and Music
         Assistant do not publish a media source</b> - their libraries live on
-        their own player entities, so pick that entity (top right, or the
-        buttons above) to browse them.
+        their own player entities, so pick that entity in the selector at the
+        top right to browse them.
         Direct stream URLs (mp3, aac, m3u8) play anywhere;
         <b>YouTube, SoundCloud and Bandcamp links are web pages, not streams</b>,
         so they need the <b>Media Extractor</b> integration${
@@ -2331,7 +2351,6 @@ class RetroPlayerCard extends HTMLElement {
     `;
 
     this._renderShortcuts(el);
-    this._renderStreamingChips(el);
 
     el.querySelector(".br-home").addEventListener("click", () => {
       this._browsePath = [];
@@ -2347,14 +2366,7 @@ class RetroPlayerCard extends HTMLElement {
     el.querySelector(".url-fav").addEventListener("click", () => {
       const u = urlIn.value.trim();
       if (!u) return this._toast("Enter a URL first");
-      this._settings.favorites.push({
-        id: uid(),
-        name: u,
-        url: u,
-        media_content_type: "music",
-      });
-      this._saveSettings();
-      this._toast("Saved to favorites");
+      this._toggleFav({ name: u, url: u, media_content_type: "music" });
     });
 
     if (supportsBrowse) this._loadBrowse(el);
@@ -2391,35 +2403,6 @@ class RetroPlayerCard extends HTMLElement {
           { id: s.media_content_id, type: s.media_content_type || "", title: s.title },
         ];
         this._loadBrowse(el);
-      }),
-    );
-  }
-
-  _renderStreamingChips(el) {
-    const host = el.querySelector(".players");
-    if (!host) return;
-    const players = this._streamingPlayers().filter((p) => p.id !== this._entityId);
-    host.innerHTML = players.length
-      ? players
-          .map(
-            (p, i) =>
-              `<button class="btn sp" data-i="${i}" title="${esc(p.id)}">${svg(
-                p.kind === "Spotify" ? ICONS.spotify : ICONS.note,
-                13,
-              )} Browse ${esc(p.kind)}: ${esc(p.name)}</button>`,
-          )
-          .join("")
-      : "";
-    host.querySelectorAll(".sp").forEach((b) =>
-      b.addEventListener("click", () => {
-        const p = players[Number(b.dataset.i)];
-        this._settings.entity = p.id;
-        this._saveSettings();
-        this._browsePath = [];
-        this._rootSources = null;
-        this._update();
-        this._renderPanel();
-        this._toast("Switched to " + p.name);
       }),
     );
   }
@@ -2501,9 +2484,9 @@ class RetroPlayerCard extends HTMLElement {
         }
         <span class="nm">${esc(ch.title)}</span>
         <span class="sub">${esc(ch.media_class || "")}</span>
-        <span class="acts">
+        <span class="acts${ch.can_play ? " always" : ""}">
           ${ch.can_play ? `<button class="iconbtn" data-act="play" title="Play">${svg(ICONS.play, 13)}</button>` : ""}
-          ${ch.can_play ? `<button class="iconbtn" data-act="fav" title="Add to favorites">${svg(ICONS.star, 13)}</button>` : ""}
+          ${ch.can_play ? this._favButton(ch.media_content_id) : ""}
         </span>
       </div>`,
       )
@@ -2517,15 +2500,13 @@ class RetroPlayerCard extends HTMLElement {
           e.stopPropagation();
           if (act.dataset.act === "play") this._playBrowseItem(ch);
           if (act.dataset.act === "fav") {
-            this._settings.favorites.push({
-              id: uid(),
+            const on = this._toggleFav({
               name: ch.title,
               media_content_id: ch.media_content_id,
               media_content_type: ch.media_content_type,
               thumbnail: ch.thumbnail || null,
             });
-            this._saveSettings();
-            this._toast("Added to favorites");
+            this._paintFav(act, on);
           }
           return;
         }

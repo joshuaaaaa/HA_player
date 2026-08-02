@@ -142,7 +142,9 @@ desetitisíce, načítá se to postupně:
 2. **Klik na zemi** → seznam jejích stanic.
 3. **Hledání stanice** — v seznamu stanic filtruje pole podle názvu okamžitě.
    Tlačítko *Search everywhere* hledá podle jména napříč všemi zeměmi.
-4. Klik na stanici ji pustí, ⭐ ji uloží mezi oblíbené.
+4. Klik na stanici ji pustí. **Hvězdička ukazuje, jestli už stanici v oblíbených
+   máš** — uložená svítí barevně, neuložená je jen slabý obrys. Klikem se
+   přepíná oběma směry, takže se dá i odebrat.
 
 ![Radio Browser panel](docs/images/panel-radio.png)
 
@@ -187,9 +189,9 @@ vypnout to jde přepínačem *Music sources only* v nastavení nebo
 `audio_only: false`.
 
 > **Spotify a Music Assistant nemají `media-source://`.** Jejich knihovna je
-> dostupná jen na jejich vlastní `media_player` entitě. Karta takové entity
-> pozná a nabídne nad seznamem tlačítko *Browse Spotify: …*, kterým se na ni
-> přepneš. Proto `media-source://spotify` hlásilo *Unknown media source*.
+> dostupná jen na jejich vlastní `media_player` entitě — vyber ji v rozbalovacím
+> seznamu vpravo nahoře a prohlížeč ukáže její obsah. Proto
+> `media-source://spotify` hlásilo *Unknown media source*.
 
 Vše nalezené jde jedním kliknutím ⭐ uložit do oblíbených.
 
