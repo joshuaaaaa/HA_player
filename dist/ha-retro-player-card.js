@@ -307,14 +307,51 @@ const DEFAULT_STATIONS = [
   },
 ];
 
-/** Known media-source prefixes we can surface as one-click shortcuts. */
-const SOURCE_SHORTCUTS = [
-  { id: "media-source://radio_browser", label: "Radio Browser", icon: "radio" },
-  { id: "media-source://spotify", label: "Spotify", icon: "spotify" },
-  { id: "media-source://music_assistant", label: "Music Assistant", icon: "note" },
-  { id: "media-source://media_source", label: "Local media", icon: "folder" },
-  { id: "media-source://tts", label: "Text to speech", icon: "note" },
+/**
+ * Radio Browser API mirrors. The card queries these directly from the browser
+ * instead of going through Home Assistant, so browsing works even when the
+ * radio_browser integration cannot reach the service from the HA host. Each
+ * mirror is tried in turn and the first one that answers is remembered.
+ */
+const RB_SERVERS = [
+  "https://de1.api.radio-browser.info",
+  "https://de2.api.radio-browser.info",
+  "https://nl1.api.radio-browser.info",
+  "https://at1.api.radio-browser.info",
+  "https://fi1.api.radio-browser.info",
 ];
+
+const RB_PAGE = 150;
+
+/** Icon picked per media source id, purely cosmetic. */
+const sourceIcon = (id = "") => {
+  if (id.includes("radio")) return ICONS.radio;
+  if (id.includes("spotify")) return ICONS.spotify;
+  if (id.includes("tts")) return ICONS.note;
+  if (id.includes("music")) return ICONS.note;
+  return ICONS.folder;
+};
+
+/** Hosts whose links are web pages, not playable streams. */
+const EXTRACTOR_HOSTS = [
+  "youtube.com",
+  "youtu.be",
+  "soundcloud.com",
+  "bandcamp.com",
+  "mixcloud.com",
+  "vimeo.com",
+  "twitch.tv",
+  "dailymotion.com",
+];
+
+const needsExtractor = (url) => {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./i, "").toLowerCase();
+    return EXTRACTOR_HOSTS.some((d) => host === d || host.endsWith("." + d));
+  } catch (e) {
+    return false;
+  }
+};
 
 const DEFAULT_SETTINGS = {
   theme: "classic",
@@ -326,6 +363,7 @@ const DEFAULT_SETTINGS = {
   showEqButton: true,
   showPlaylistButton: true,
   showBrowserButton: true,
+  showRadioButton: true,
   showPlayerSelect: true,
   compact: false,
   marqueeSpeed: 1,
@@ -413,6 +451,8 @@ const ICONS = {
   note: "M12 3v10.6A4 4 0 1014 17V7h4V3h-6z",
   spotify:
     "M12 2a10 10 0 1010 10A10 10 0 0012 2zm4.59 14.42a.62.62 0 01-.86.21c-2.35-1.44-5.3-1.76-8.79-.96a.62.62 0 11-.28-1.22c3.81-.87 7.09-.5 9.72 1.11a.62.62 0 01.21.86zm1.23-2.74a.78.78 0 01-1.07.26c-2.69-1.65-6.79-2.13-9.97-1.17a.78.78 0 11-.45-1.49c3.63-1.1 8.15-.56 11.24 1.33a.78.78 0 01.25 1.07zm.11-2.86C14.7 8.9 9.4 8.73 6.32 9.66a.93.93 0 11-.54-1.78c3.54-1.08 9.39-.87 13.09 1.33a.93.93 0 11-.94 1.61z",
+  search:
+    "M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0A4.5 4.5 0 1114 9.5 4.5 4.5 0 019.5 14z",
   power: "M13 3h-2v10h2V3zm4.8 2.2l-1.4 1.4A7 7 0 1112 5V3a9 9 0 105.8 2.2z",
   download: "M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z",
   upload: "M5 20h14v-2H5v2zM5 9h4v6h6V9h4l-7-7-7 7z",
@@ -959,6 +999,18 @@ class RetroPlayerCard extends HTMLElement {
     this._browsePath = [];
     this._browseItems = null;
     this._browseLoading = false;
+    this._rootSources = null;
+    this._rbServer = null;
+    this._rb = {
+      view: "countries",
+      country: null,
+      countries: null,
+      stations: [],
+      query: "",
+      offset: 0,
+      more: false,
+      error: null,
+    };
     this._seeking = false;
     this._volDrag = false;
     this._lastFrame = 0;
@@ -980,6 +1032,7 @@ class RetroPlayerCard extends HTMLElement {
       show_eq: true,
       show_playlist: true,
       show_browser: true,
+      show_radio: true,
       show_player_select: true,
       compact: false,
       entities: null,
@@ -1000,6 +1053,7 @@ class RetroPlayerCard extends HTMLElement {
       showEqButton: this._config.show_eq,
       showPlaylistButton: this._config.show_playlist,
       showBrowserButton: this._config.show_browser,
+      showRadioButton: this._config.show_radio,
       showPlayerSelect: this._config.show_player_select,
       compact: this._config.compact,
     };
@@ -1179,6 +1233,7 @@ class RetroPlayerCard extends HTMLElement {
           <select class="player-select" title="Playback device"></select>
           <button class="tbtn" data-panel="eq" title="Equalizer">${svg(ICONS.eq, 14)}</button>
           <button class="tbtn" data-panel="playlist" title="Playlist / favorites">${svg(ICONS.list, 14)}</button>
+          <button class="tbtn" data-panel="radio" title="Radio Browser">${svg(ICONS.radio, 14)}</button>
           <button class="tbtn" data-panel="browser" title="Browse media">${svg(ICONS.folder, 14)}</button>
           <button class="tbtn" data-panel="settings" title="Settings">${svg(ICONS.gear, 14)}</button>
         </div>
@@ -1469,6 +1524,7 @@ class RetroPlayerCard extends HTMLElement {
       eq: set.showEqButton,
       playlist: set.showPlaylistButton,
       browser: set.showBrowserButton,
+      radio: set.showRadioButton,
       settings: true,
     };
     this._$$(".tbtn[data-panel]").forEach((b) => {
@@ -1553,6 +1609,7 @@ class RetroPlayerCard extends HTMLElement {
     if (this._panel === "eq") this._renderEq(el);
     else if (this._panel === "playlist") this._renderPlaylist(el);
     else if (this._panel === "browser") this._renderBrowser(el);
+    else if (this._panel === "radio") this._renderRadio(el);
     else if (this._panel === "settings") this._renderSettings(el);
   }
 
@@ -1760,15 +1817,362 @@ class RetroPlayerCard extends HTMLElement {
       });
   }
 
+  _hasService(domain, service) {
+    const s = this._hass && this._hass.services;
+    return !!(s && s[domain] && s[domain][service]);
+  }
+
   _playItem(item) {
     if (!item) return;
     if (!this._entityId) return this._toast("Select a media player first");
     const id = item.media_content_id || item.url;
     if (!id) return this._toast("Entry has no URL");
-    this._service("play_media", {
+    const data = {
+      entity_id: this._entityId,
       media_content_id: id,
       media_content_type: item.media_content_type || "music",
-    }).then(() => this._toast("Playing: " + (item.name || id)));
+    };
+
+    // A YouTube/SoundCloud link is a web page - media_player.play_media hands it
+    // to the device untouched and playback silently fails. media_extractor
+    // resolves it to a real stream first, so use it when it is installed.
+    if (!item.media_content_id && needsExtractor(id)) {
+      if (!this._hasService("media_extractor", "play_media")) {
+        return this._toast(
+          "That link is a web page - install the Media Extractor integration to play it",
+        );
+      }
+      return this._hass
+        .callService("media_extractor", "play_media", data)
+        .then(() => this._toast("Extracting: " + (item.name || id)))
+        .catch((err) => {
+          console.error("[retro-player-card] media_extractor failed", err);
+          this._toast("Media Extractor could not resolve that link");
+        });
+    }
+
+    this._service("play_media", data).then(() =>
+      this._toast("Playing: " + (item.name || id)),
+    );
+  }
+
+  /* --- Radio Browser panel (direct API) --- */
+
+  /**
+   * Query the Radio Browser API, trying each mirror until one answers.
+   * Runs from the browser, so it works even when the Home Assistant host
+   * itself cannot reach the service.
+   */
+  async _rbApi(path) {
+    const ordered = this._rbServer
+      ? [this._rbServer, ...RB_SERVERS.filter((s) => s !== this._rbServer)]
+      : RB_SERVERS.slice();
+    let lastErr;
+    for (const base of ordered) {
+      try {
+        const ctl = new AbortController();
+        const timer = setTimeout(() => ctl.abort(), 9000);
+        const res = await fetch(base + path, {
+          signal: ctl.signal,
+          headers: { Accept: "application/json" },
+        });
+        clearTimeout(timer);
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const data = await res.json();
+        this._rbServer = base;
+        return data;
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    throw lastErr || new Error("no mirror answered");
+  }
+
+  _renderRadio(el) {
+    const rb = this._rb;
+    const inCountries = rb.view === "countries";
+    el.innerHTML = `
+      <div class="panel-head">
+        <span class="panel-title">Radio Browser</span>
+        <span class="grow"></span>
+        ${inCountries ? "" : `<button class="btn rb-back">${svg(ICONS.back, 13)} Countries</button>`}
+        <button class="btn rb-reload" title="Reload">&#8635;</button>
+      </div>
+      <div class="row">
+        ${svg(ICONS.search, 14)}
+        <input type="text" class="rb-q" style="flex:1 1 auto"
+               value="${esc(rb.query)}"
+               placeholder="${inCountries ? "Filter countries..." : "Search stations by name..."}" />
+        <button class="btn rb-all" title="Search all countries">Search everywhere</button>
+      </div>
+      <div class="crumbs rb-crumbs"></div>
+      <div class="list rb-list"><div class="empty">Loading...</div></div>
+      <div class="rb-more"></div>
+      <div class="hint rb-hint"></div>
+    `;
+
+    const q = el.querySelector(".rb-q");
+    q.addEventListener("input", () => {
+      rb.query = q.value;
+      if (rb.view === "countries") {
+        this._rbRenderList(el);
+      } else {
+        clearTimeout(this._rbDebounce);
+        this._rbDebounce = setTimeout(() => this._rbLoadStations(el, true), 400);
+      }
+    });
+    q.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      clearTimeout(this._rbDebounce);
+      if (rb.view === "countries" && rb.query.trim()) {
+        rb.country = null;
+        rb.view = "stations";
+        this._renderRadio(el);
+      } else {
+        this._rbLoadStations(el, true);
+      }
+    });
+
+    el.querySelector(".rb-all").addEventListener("click", () => {
+      rb.country = null;
+      rb.view = "stations";
+      this._renderRadio(el);
+    });
+    el.querySelector(".rb-reload").addEventListener("click", () => {
+      if (rb.view === "countries") {
+        rb.countries = null;
+        this._rbLoadCountries(el);
+      } else {
+        this._rbLoadStations(el, true);
+      }
+    });
+    const back = el.querySelector(".rb-back");
+    if (back)
+      back.addEventListener("click", () => {
+        rb.view = "countries";
+        rb.country = null;
+        rb.query = "";
+        rb.stations = [];
+        this._renderRadio(el);
+      });
+
+    this._rbCrumbs(el);
+    if (rb.view === "countries") this._rbLoadCountries(el);
+    else this._rbLoadStations(el, true);
+  }
+
+  _rbCrumbs(el) {
+    const rb = this._rb;
+    const c = el.querySelector(".rb-crumbs");
+    if (!c) return;
+    const where = rb.country
+      ? esc(rb.country.name)
+      : rb.view === "stations"
+        ? "All countries"
+        : "";
+    c.innerHTML = `<button class="rb-c-home">Countries</button>${
+      where ? `<span>/</span><span>${where}</span>` : ""
+    }`;
+    const home = c.querySelector(".rb-c-home");
+    if (home)
+      home.addEventListener("click", () => {
+        rb.view = "countries";
+        rb.country = null;
+        rb.query = "";
+        this._renderRadio(el);
+      });
+  }
+
+  async _rbLoadCountries(el) {
+    const rb = this._rb;
+    if (rb.countries) return this._rbRenderList(el);
+    const list = el.querySelector(".rb-list");
+    list.innerHTML = `<div class="empty">Loading countries...</div>`;
+    try {
+      const raw = await this._rbApi("/json/countries?hidebroken=true");
+      rb.countries = (raw || [])
+        .filter((c) => c && c.name && c.iso_3166_1 && c.stationcount > 0)
+        .map((c) => ({ name: c.name, code: c.iso_3166_1, count: c.stationcount }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      rb.error = null;
+      this._rbRenderList(el);
+    } catch (err) {
+      rb.error = err;
+      this._rbError(el, err);
+    }
+  }
+
+  async _rbLoadStations(el, reset) {
+    const rb = this._rb;
+    const list = el.querySelector(".rb-list");
+    if (!list) return;
+    if (reset) {
+      rb.offset = 0;
+      rb.stations = [];
+      list.innerHTML = `<div class="empty">Loading stations...</div>`;
+    }
+    const query = rb.query.trim();
+    const p = new URLSearchParams({
+      hidebroken: "true",
+      order: "votes",
+      reverse: "true",
+      limit: String(RB_PAGE),
+      offset: String(rb.offset),
+    });
+    let path;
+    if (query) {
+      p.set("name", query);
+      if (rb.country) p.set("countrycode", rb.country.code);
+      path = "/json/stations/search?" + p.toString();
+    } else if (rb.country) {
+      path = `/json/stations/bycountrycodeexact/${encodeURIComponent(rb.country.code)}?${p}`;
+    } else {
+      path = "/json/stations/topvote/" + RB_PAGE;
+    }
+
+    try {
+      const raw = await this._rbApi(path);
+      const batch = (raw || [])
+        .filter((s) => s && s.name && (s.url_resolved || s.url))
+        .map((s) => ({
+          name: s.name.trim(),
+          url: s.url_resolved || s.url,
+          favicon: s.favicon || null,
+          country: s.country || "",
+          codec: s.codec || "",
+          bitrate: s.bitrate || 0,
+          tags: (s.tags || "").split(",").filter(Boolean).slice(0, 3).join(", "),
+        }));
+      rb.stations = reset ? batch : rb.stations.concat(batch);
+      rb.more = batch.length === RB_PAGE && path.indexOf("/topvote/") === -1;
+      rb.error = null;
+      this._rbRenderList(el);
+    } catch (err) {
+      rb.error = err;
+      this._rbError(el, err);
+    }
+  }
+
+  _rbError(el, err) {
+    const list = el.querySelector(".rb-list");
+    if (!list) return;
+    list.innerHTML = `
+      <div class="empty">
+        Could not reach the Radio Browser API from this browser.<br />
+        <span class="sub">${esc((err && err.message) || "unknown error")}</span>
+      </div>`;
+    const hint = el.querySelector(".rb-hint");
+    if (hint) {
+      hint.innerHTML = `Check that this device has internet access. You can also try the
+        <b>Radio Browser</b> entry in the media browser (📁), which goes through
+        Home Assistant instead.`;
+    }
+    const more = el.querySelector(".rb-more");
+    if (more) more.innerHTML = "";
+  }
+
+  _rbRenderList(el) {
+    const rb = this._rb;
+    const list = el.querySelector(".rb-list");
+    const more = el.querySelector(".rb-more");
+    const hint = el.querySelector(".rb-hint");
+    if (!list) return;
+    this._rbCrumbs(el);
+
+    if (rb.view === "countries") {
+      const q = rb.query.trim().toLowerCase();
+      const rows = (rb.countries || []).filter(
+        (c) => !q || c.name.toLowerCase().includes(q) || c.code.toLowerCase() === q,
+      );
+      list.innerHTML = rows.length
+        ? rows
+            .map(
+              (c, i) => `
+        <div class="item" data-i="${i}">
+          <span class="idx">${esc(c.code)}</span>
+          <span class="nm">${esc(c.name)}</span>
+          <span class="sub">${c.count} stations</span>
+        </div>`,
+            )
+            .join("")
+        : `<div class="empty">No country matches "${esc(rb.query)}". Press Enter to search stations instead.</div>`;
+      list.querySelectorAll(".item").forEach((row) =>
+        row.addEventListener("click", () => {
+          rb.country = rows[Number(row.dataset.i)];
+          rb.view = "stations";
+          rb.query = "";
+          this._renderRadio(el);
+        }),
+      );
+      if (more) more.innerHTML = "";
+      if (hint)
+        hint.innerHTML = `${(rb.countries || []).length} countries. Pick one to list its stations,
+          or type a name and press Enter to search stations worldwide.`;
+      return;
+    }
+
+    const rows = rb.stations;
+    list.innerHTML = rows.length
+      ? rows
+          .map(
+            (s, i) => `
+      <div class="item" data-i="${i}">
+        ${
+          s.favicon
+            ? `<img class="thumb" src="${esc(s.favicon)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'" />`
+            : `<span class="idx">${svg(ICONS.radio, 13)}</span>`
+        }
+        <span class="nm" title="${esc(s.url)}">${esc(s.name)}</span>
+        <span class="sub">${esc(
+          [s.codec, s.bitrate ? s.bitrate + "k" : "", s.country, s.tags]
+            .filter(Boolean)
+            .join(" · "),
+        )}</span>
+        <span class="acts">
+          <button class="iconbtn" data-act="fav" title="Add to favorites">${svg(ICONS.star, 13)}</button>
+        </span>
+      </div>`,
+          )
+          .join("")
+      : `<div class="empty">No stations found.</div>`;
+
+    list.querySelectorAll(".item").forEach((row) => {
+      const st = rows[Number(row.dataset.i)];
+      row.addEventListener("click", (e) => {
+        const act = e.target.closest("[data-act]");
+        if (act) {
+          e.stopPropagation();
+          this._settings.favorites.push({
+            id: uid(),
+            name: st.name,
+            url: st.url,
+            media_content_type: "music",
+            thumbnail: st.favicon || null,
+            genre: st.tags || st.country,
+          });
+          this._saveSettings();
+          this._toast("Added to favorites");
+          return;
+        }
+        this._playItem({ name: st.name, url: st.url, media_content_type: "music" });
+        list.querySelectorAll(".item").forEach((r) => r.classList.toggle("active", r === row));
+      });
+    });
+
+    if (more) {
+      more.innerHTML = rb.more
+        ? `<button class="btn wide rb-more-btn">Load ${RB_PAGE} more</button>`
+        : "";
+      const btn = more.querySelector(".rb-more-btn");
+      if (btn)
+        btn.addEventListener("click", () => {
+          rb.offset += RB_PAGE;
+          this._rbLoadStations(el, false);
+        });
+    }
+    if (hint)
+      hint.innerHTML = `${rows.length} stations shown, sorted by popularity. Click one to play it on
+        <b>${esc(this._entityId || "-")}</b>, or ⭐ to save it.`;
   }
 
   /* --- Media browser panel --- */
@@ -1793,22 +2197,19 @@ class RetroPlayerCard extends HTMLElement {
         <button class="btn url-fav" title="Save to favorites">${svg(ICONS.star, 13)}</button>
       </div>
       <div class="hint">
-        Sources shown here come from your Home Assistant integrations. Install
-        <b>Radio Browser</b> for radio stations, <b>Spotify</b> or
-        <b>Music Assistant</b> for streaming services - they appear automatically.
+        Sources listed here are the ones your player really offers - install
+        <b>Spotify</b> or <b>Music Assistant</b> and they show up on their own.
+        Direct stream URLs (mp3, aac, m3u8) play anywhere;
+        <b>YouTube, SoundCloud and Bandcamp links are web pages, not streams</b>,
+        so they need the <b>Media Extractor</b> integration${
+          this._hasService("media_extractor", "play_media")
+            ? " - which you have, so those links are handled automatically"
+            : " (not installed) or a Music Assistant player"
+        }.
       </div>
     `;
 
-    el.querySelector(".shortcuts").innerHTML = SOURCE_SHORTCUTS.map(
-      (s) =>
-        `<button class="btn sc" data-id="${esc(s.id)}">${svg(ICONS[s.icon] || ICONS.folder, 13)} ${esc(s.label)}</button>`,
-    ).join("");
-    el.querySelectorAll(".sc").forEach((b) =>
-      b.addEventListener("click", () => {
-        this._browsePath = [{ id: b.dataset.id, type: "", title: b.textContent.trim() }];
-        this._loadBrowse(el);
-      }),
-    );
+    this._renderShortcuts(el);
 
     el.querySelector(".br-home").addEventListener("click", () => {
       this._browsePath = [];
@@ -1837,6 +2238,32 @@ class RetroPlayerCard extends HTMLElement {
     if (supportsBrowse) this._loadBrowse(el);
   }
 
+  /**
+   * Shortcut chips are built from the player's own root listing, so they only
+   * ever point at sources that really exist for this entity - guessing
+   * media-source ids produced dead buttons for anyone without that integration.
+   */
+  _renderShortcuts(el) {
+    const host = el.querySelector(".shortcuts");
+    if (!host) return;
+    const sources = this._rootSources || [];
+    host.innerHTML = sources
+      .map(
+        (s, i) =>
+          `<button class="btn sc" data-i="${i}">${svg(sourceIcon(s.media_content_id), 13)} ${esc(s.title)}</button>`,
+      )
+      .join("");
+    host.querySelectorAll(".sc").forEach((b) =>
+      b.addEventListener("click", () => {
+        const s = sources[Number(b.dataset.i)];
+        this._browsePath = [
+          { id: s.media_content_id, type: s.media_content_type || "", title: s.title },
+        ];
+        this._loadBrowse(el);
+      }),
+    );
+  }
+
   async _loadBrowse(el) {
     const list = el.querySelector(".browse-list");
     if (!this._entityId) {
@@ -1853,12 +2280,25 @@ class RetroPlayerCard extends HTMLElement {
     try {
       const res = await this._hass.callWS(msg);
       this._browseItems = res;
+      if (!cur) {
+        this._rootSources = ((res && res.children) || []).filter((c) => c.can_expand);
+        this._renderShortcuts(el);
+      }
       this._renderBrowseList(el, res);
     } catch (err) {
       console.error("[retro-player-card] browse failed", err);
-      list.innerHTML = `<div class="empty">Could not browse: ${esc(
-        (err && (err.message || err.error)) || "unknown error",
-      )}</div>`;
+      const reason = (err && (err.message || err.error)) || "unknown error";
+      const isRadio = cur && String(cur.id).includes("radio_browser");
+      list.innerHTML = `<div class="empty">
+        Could not browse: ${esc(reason)}
+        ${
+          isRadio
+            ? `<br /><span class="sub">Home Assistant could not reach the Radio Browser
+                 service. Use the 📻 panel instead - it queries Radio Browser
+                 straight from this browser.</span>`
+            : ""
+        }
+      </div>`;
     }
     this._renderCrumbs(el);
   }
@@ -1997,6 +2437,7 @@ class RetroPlayerCard extends HTMLElement {
           <label class="check"><input type="checkbox" class="s-b-eq"${set.showEqButton ? " checked" : ""}/> Equalizer button</label>
           <label class="check"><input type="checkbox" class="s-b-pl"${set.showPlaylistButton ? " checked" : ""}/> Playlist button</label>
           <label class="check"><input type="checkbox" class="s-b-br"${set.showBrowserButton ? " checked" : ""}/> Browser button</label>
+          <label class="check"><input type="checkbox" class="s-b-rb"${set.showRadioButton ? " checked" : ""}/> Radio Browser button</label>
           <label class="check"><input type="checkbox" class="s-b-ps"${set.showPlayerSelect ? " checked" : ""}/> Player selector</label>
         </div>
 
@@ -2087,6 +2528,7 @@ class RetroPlayerCard extends HTMLElement {
       ".s-b-eq": "showEqButton",
       ".s-b-pl": "showPlaylistButton",
       ".s-b-br": "showBrowserButton",
+      ".s-b-rb": "showRadioButton",
       ".s-b-ps": "showPlayerSelect",
     };
     for (const [sel, key] of Object.entries(toggles)) {
@@ -2282,6 +2724,7 @@ class RetroPlayerCardEditor extends HTMLElement {
           ${check("show_eq", "Equalizer button")}
           ${check("show_playlist", "Playlist button")}
           ${check("show_browser", "Media browser button")}
+          ${check("show_radio", "Radio Browser button")}
           ${check("show_player_select", "Player selector")}
           ${check("compact", "Compact layout", false)}
         </div>

@@ -17,9 +17,10 @@ vzhledu a exportem/importem nastavení.
 | 🎨 **8 témat + HA téma** | Classic Skin, Modern Dark, Neon Nights, Vaporwave, Terminal Green, Amber CRT, Light Minimal, Follow HA Theme |
 | ▶️ **Plné ovládání** | Play/pauza, stop, další/předchozí, shuffle, repeat, zapnutí/vypnutí, hlasitost, mute, přetáčení |
 | 🔊 **Výběr přehrávače** | Rozbalovací seznam všech `media_player` entit – hudbu pustíš kamkoliv |
-| 📻 **Rádia** | 10 předvolených stanic + vlastní stream URL; plná podpora integrace **Radio Browser** |
+| 📻 **Radio Browser** | Vlastní panel: nejdřív seznam zemí, pak stanice; hledání země i stanice, řazení podle popularity |
+| 🎵 **Vlastní stanice** | 10 předvolených stanic + libovolná stream URL |
 | ⭐ **Oblíbené** | Ulož si co právě hraje, nebo cokoliv z prohlížeče médií; řazení, mazání |
-| 📁 **Prohlížeč médií** | Prochází vše, co HA nabízí – Spotify, Music Assistant, YouTube (přes Music Assistant), lokální média, TTS |
+| 📁 **Prohlížeč médií** | Prochází vše, co HA nabízí – Spotify, Music Assistant, lokální média, TTS; zkratky se generují z reálné nabídky přehrávače |
 | 🎚 **Ekvalizér** | 10pásmový EQ + preamp a 9 předvoleb; přepínání `sound_mode` přehrávače |
 | ⚙️ **Nastavení v kartě** | Vše se dá měnit za běhu, bez editace YAML |
 | 💾 **Export / Import** | Záloha nastavení, oblíbených a stanic do JSON souboru nebo schránky |
@@ -82,6 +83,7 @@ show_artwork: true
 show_eq: true
 show_playlist: true
 show_browser: true
+show_radio: true
 show_player_select: true
 compact: false
 storage_key: obyvak
@@ -113,6 +115,7 @@ stations:
 | `show_eq` | bool | `true` | Tlačítko ekvalizéru |
 | `show_playlist` | bool | `true` | Tlačítko playlistu / oblíbených |
 | `show_browser` | bool | `true` | Tlačítko prohlížeče médií |
+| `show_radio` | bool | `true` | Tlačítko panelu Radio Browser |
 | `show_player_select` | bool | `true` | Rozbalovací výběr přehrávače |
 | `compact` | bool | `false` | Kompaktní (nižší) rozvržení |
 | `entities` | list | všechny | Omezení nabídky přehrávačů |
@@ -127,6 +130,29 @@ stations:
 
 ---
 
+## 📻 Radio Browser
+
+Tlačítko 📻 otevře vlastní prohlížeč internetových rádií. Protože stanic jsou
+desetitisíce, načítá se to postupně:
+
+1. **Seznam zemí** s počtem stanic — psaním do pole se seznam okamžitě filtruje
+   (funguje i kód země, např. `CZ`).
+2. **Klik na zemi** → její stanice seřazené podle popularity, po 150; tlačítkem
+   *Load more* se dotáhnou další.
+3. **Hledání stanice** — v seznamu stanic pole hledá podle názvu přímo v API,
+   ve vybrané zemi. Tlačítko *Search everywhere* hledá napříč všemi zeměmi.
+4. Klik na stanici ji pustí, ⭐ ji uloží mezi oblíbené.
+
+![Radio Browser panel](docs/images/panel-radio.png)
+
+**Karta se ptá Radio Browser API přímo z prohlížeče**, ne přes Home Assistant.
+Díky tomu rádia fungují i tehdy, když na HA server integrace `radio_browser`
+hlásí *„Error occurred while communicating with Radio Browser"*. Zkouší se
+postupně několik zrcadel (`de1`, `de2`, `nl1`, `at1`, `fi1`), první funkční si
+karta zapamatuje. Integraci `radio_browser` k tomuhle panelu **nepotřebuješ**.
+
+---
+
 ## 🎧 Propojení se Spotify, YouTube a rádii
 
 Karta záměrně **nemá vlastní účty ani API klíče** – používá přehrávače a zdroje médií,
@@ -136,11 +162,13 @@ které už v Home Assistantu máš. Tlačítko 📁 (prohlížeč médií) autom
 |---|---|---|
 | **Rádia** | [Radio Browser](https://www.home-assistant.io/integrations/radio_browser/) (oficiální integrace) | Prohledávání tisíců stanic podle země/žánru, přehrání na vybrané entitě |
 | **Spotify** | [Spotify integrace](https://www.home-assistant.io/integrations/spotify/) | V prohlížeči se objeví tvoje playlisty a alba; přehraje se na Spotify Connect zařízení |
-| **YouTube / YouTube Music** | [Music Assistant](https://music-assistant.io/) (doporučeno) nebo `ytube_music_player` | Music Assistant přidá YouTube Music, Spotify, Tidal, Deezer… do jednoho prohlížeče |
+| **YouTube / SoundCloud** | [Media Extractor](https://www.home-assistant.io/integrations/media_extractor/) nebo [Music Assistant](https://music-assistant.io/) | Odkaz na YouTube je **webová stránka, ne stream** — sám o sobě se nepřehraje. Když máš Media Extractor, karta ho pro takové odkazy použije automaticky |
 | **Lokální hudba** | Vestavěné `media_source` | Soubory z `config/media` |
 | **Libovolný stream** | – | Pole „Paste a stream / media URL“ v prohlížeči médií |
 
-Vše nalezené jde jedním kliknutím ⭐ uložit do oblíbených.
+Zkratky nad seznamem se generují z toho, co tvůj přehrávač opravdu nabízí —
+nezobrazí se tedy nic, co nemáš nainstalované. Vše nalezené jde jedním
+kliknutím ⭐ uložit do oblíbených.
 
 | Prohlížeč médií | Rádia a oblíbené |
 |---|---|
@@ -205,6 +233,17 @@ kreslení se úplně zastaví (nulová zátěž CPU).
 Home Assistant nemá univerzální EQ API, takže posuvníky tvarují vizualizaci a ukládají se
 s nastavením karty. Pokud tvůj přehrávač hlásí `sound_mode_list`, zobrazí se pod EQ
 tlačítka režimů zvuku – ta zařízení skutečně přepínají.
+
+**Prohlížeč médií hlásí „Error occurred while communicating with Radio Browser".**
+Tuhle chybu vrací Home Assistant — jeho integrace `radio_browser` se nedovolá na
+službu. Použij panel 📻, ten jde na API přímo z prohlížeče a na HA serveru
+nezávisí.
+
+**Odkaz na YouTube se nepřehraje.**
+YouTube odkaz je webová stránka, ne audio stream, takže ho `media_player.play_media`
+předá zařízení a nic se nestane. Nainstaluj **Media Extractor** — karta pak takové
+odkazy pošle přes `media_extractor.play_media`, který je nejdřív rozbalí na
+skutečný stream. Alternativa je přehrávač z **Music Assistant**.
 
 **Proč jsou některá tlačítka šedá?**
 Karta čte `supported_features` entity. Co přehrávač neumí, se vypne.
