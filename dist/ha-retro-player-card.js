@@ -6,7 +6,7 @@
  * No build step required - this file is the source.
  */
 
-const CARD_VERSION = "1.0.0";
+const CARD_VERSION = "1.1.0";
 
 /* ------------------------------------------------------------------ *
  * Constants
@@ -321,7 +321,23 @@ const RB_SERVERS = [
   "https://fi1.api.radio-browser.info",
 ];
 
-const RB_PAGE = 150;
+/**
+ * Sources that are not music. A Home Assistant install with cameras, Frigate
+ * or image tooling otherwise fills the browser with things a media player
+ * cannot play.
+ */
+const NON_MUSIC_CLASSES = new Set([
+  "image", "video", "movie", "tv_show", "episode", "season", "game", "url",
+]);
+
+const NON_MUSIC_SOURCES = [
+  "media-source://camera",
+  "media-source://image",
+  "media-source://image_upload",
+  "media-source://frigate",
+  "media-source://ai_task",
+  "media-source://tts",
+];
 
 /** Icon picked per media source id, purely cosmetic. */
 const sourceIcon = (id = "") => {
@@ -364,6 +380,7 @@ const DEFAULT_SETTINGS = {
   showPlaylistButton: true,
   showBrowserButton: true,
   showRadioButton: true,
+  audioOnly: true,
   showPlayerSelect: true,
   compact: false,
   marqueeSpeed: 1,
@@ -1033,6 +1050,7 @@ class RetroPlayerCard extends HTMLElement {
       show_playlist: true,
       show_browser: true,
       show_radio: true,
+      audio_only: true,
       show_player_select: true,
       compact: false,
       entities: null,
@@ -1054,6 +1072,7 @@ class RetroPlayerCard extends HTMLElement {
       showPlaylistButton: this._config.show_playlist,
       showBrowserButton: this._config.show_browser,
       showRadioButton: this._config.show_radio,
+      audioOnly: this._config.audio_only,
       showPlayerSelect: this._config.show_player_select,
       compact: this._config.compact,
     };
@@ -1856,12 +1875,26 @@ class RetroPlayerCard extends HTMLElement {
     );
   }
 
-  /* --- Radio Browser panel (direct API) --- */
+  /* --- Radio Browser panel --- */
 
   /**
-   * Query the Radio Browser API, trying each mirror until one answers.
-   * Runs from the browser, so it works even when the Home Assistant host
-   * itself cannot reach the service.
+   * Browse a media-source id through Home Assistant.
+   * media_content_type "app" is what the HA media browser itself sends for
+   * these ids; an empty string is rejected by some player integrations.
+   */
+  _haBrowse(id) {
+    return this._hass.callWS({
+      type: "media_player/browse_media",
+      entity_id: this._entityId,
+      media_content_id: id,
+      media_content_type: "app",
+    });
+  }
+
+  /**
+   * Query the Radio Browser API directly, trying each mirror until one answers.
+   * Used as a fallback when the Home Assistant integration is missing or its
+   * own upstream calls fail.
    */
   async _rbApi(path) {
     const ordered = this._rbServer
@@ -1893,7 +1926,8 @@ class RetroPlayerCard extends HTMLElement {
     const inCountries = rb.view === "countries";
     el.innerHTML = `
       <div class="panel-head">
-        <span class="panel-title">Radio Browser</span>
+        <span class="panel-title">Radio</span>
+        <span class="hint rb-src"></span>
         <span class="grow"></span>
         ${inCountries ? "" : `<button class="btn rb-back">${svg(ICONS.back, 13)} Countries</button>`}
         <button class="btn rb-reload" title="Reload">&#8635;</button>
@@ -1902,48 +1936,32 @@ class RetroPlayerCard extends HTMLElement {
         ${svg(ICONS.search, 14)}
         <input type="text" class="rb-q" style="flex:1 1 auto"
                value="${esc(rb.query)}"
-               placeholder="${inCountries ? "Filter countries..." : "Search stations by name..."}" />
-        <button class="btn rb-all" title="Search all countries">Search everywhere</button>
+               placeholder="${inCountries ? "Search country..." : "Search station by name..."}" />
+        <button class="btn rb-all" title="Search stations in every country">Search everywhere</button>
       </div>
       <div class="crumbs rb-crumbs"></div>
       <div class="list rb-list"><div class="empty">Loading...</div></div>
-      <div class="rb-more"></div>
       <div class="hint rb-hint"></div>
     `;
 
     const q = el.querySelector(".rb-q");
     q.addEventListener("input", () => {
       rb.query = q.value;
-      if (rb.view === "countries") {
-        this._rbRenderList(el);
-      } else {
-        clearTimeout(this._rbDebounce);
-        this._rbDebounce = setTimeout(() => this._rbLoadStations(el, true), 400);
-      }
+      this._rbRenderList(el);
     });
     q.addEventListener("keydown", (e) => {
-      if (e.key !== "Enter") return;
-      clearTimeout(this._rbDebounce);
-      if (rb.view === "countries" && rb.query.trim()) {
-        rb.country = null;
-        rb.view = "stations";
-        this._renderRadio(el);
-      } else {
-        this._rbLoadStations(el, true);
+      if (e.key === "Enter" && rb.query.trim() && rb.view === "countries") {
+        this._rbSearchEverywhere(el);
       }
     });
 
-    el.querySelector(".rb-all").addEventListener("click", () => {
-      rb.country = null;
-      rb.view = "stations";
-      this._renderRadio(el);
-    });
+    el.querySelector(".rb-all").addEventListener("click", () => this._rbSearchEverywhere(el));
     el.querySelector(".rb-reload").addEventListener("click", () => {
       if (rb.view === "countries") {
         rb.countries = null;
         this._rbLoadCountries(el);
-      } else {
-        this._rbLoadStations(el, true);
+      } else if (rb.country) {
+        this._rbLoadStations(el);
       }
     });
     const back = el.querySelector(".rb-back");
@@ -1956,20 +1974,16 @@ class RetroPlayerCard extends HTMLElement {
         this._renderRadio(el);
       });
 
-    this._rbCrumbs(el);
     if (rb.view === "countries") this._rbLoadCountries(el);
-    else this._rbLoadStations(el, true);
+    else if (rb.country) this._rbLoadStations(el);
+    else this._rbRenderList(el);
   }
 
   _rbCrumbs(el) {
     const rb = this._rb;
     const c = el.querySelector(".rb-crumbs");
     if (!c) return;
-    const where = rb.country
-      ? esc(rb.country.name)
-      : rb.view === "stations"
-        ? "All countries"
-        : "";
+    const where = rb.country ? esc(rb.country.name) : rb.view === "stations" ? "Search results" : "";
     c.innerHTML = `<button class="rb-c-home">Countries</button>${
       where ? `<span>/</span><span>${where}</span>` : ""
     }`;
@@ -1983,72 +1997,161 @@ class RetroPlayerCard extends HTMLElement {
       });
   }
 
+  _rbSetSource(el, backend) {
+    this._rb.backend = backend;
+    const badge = el.querySelector(".rb-src");
+    if (badge) {
+      badge.textContent =
+        backend === "ha" ? "via Home Assistant" : backend === "api" ? "via radio-browser.info" : "";
+    }
+  }
+
   async _rbLoadCountries(el) {
     const rb = this._rb;
     if (rb.countries) return this._rbRenderList(el);
     const list = el.querySelector(".rb-list");
+    if (!list) return;
     list.innerHTML = `<div class="empty">Loading countries...</div>`;
+
+    // 1. Home Assistant. Deliberately skips media-source://radio_browser itself:
+    // browsing that root makes five upstream calls (popular, tags, languages,
+    // local, countries) and fails if any one of them does. The country list is
+    // a single call.
+    if (this._entityId && this._supports(SUPPORT.BROWSE_MEDIA)) {
+      try {
+        const res = await this._haBrowse("media-source://radio_browser/country");
+        const rows = ((res && res.children) || [])
+          .filter((c) => c.title && c.media_content_id)
+          .map((c) => ({
+            name: c.title,
+            code: (String(c.media_content_id).split("/country/")[1] || "").toUpperCase(),
+            id: c.media_content_id,
+          }));
+        if (rows.length) {
+          rb.countries = rows.sort((a, b) => a.name.localeCompare(b.name));
+          this._rbSetSource(el, "ha");
+          return this._rbRenderList(el);
+        }
+      } catch (err) {
+        console.warn("[retro-player-card] HA country list failed, trying the API", err);
+      }
+    }
+
+    // 2. Straight from the browser.
     try {
       const raw = await this._rbApi("/json/countries?hidebroken=true");
       rb.countries = (raw || [])
         .filter((c) => c && c.name && c.iso_3166_1 && c.stationcount > 0)
-        .map((c) => ({ name: c.name, code: c.iso_3166_1, count: c.stationcount }))
+        .map((c) => ({ name: c.name, code: c.iso_3166_1, count: c.stationcount, id: null }))
         .sort((a, b) => a.name.localeCompare(b.name));
-      rb.error = null;
+      this._rbSetSource(el, "api");
       this._rbRenderList(el);
     } catch (err) {
-      rb.error = err;
       this._rbError(el, err);
     }
   }
 
-  async _rbLoadStations(el, reset) {
+  async _rbLoadStations(el) {
     const rb = this._rb;
     const list = el.querySelector(".rb-list");
-    if (!list) return;
-    if (reset) {
-      rb.offset = 0;
-      rb.stations = [];
-      list.innerHTML = `<div class="empty">Loading stations...</div>`;
-    }
-    const query = rb.query.trim();
-    const p = new URLSearchParams({
-      hidebroken: "true",
-      order: "votes",
-      reverse: "true",
-      limit: String(RB_PAGE),
-      offset: String(rb.offset),
-    });
-    let path;
-    if (query) {
-      p.set("name", query);
-      if (rb.country) p.set("countrycode", rb.country.code);
-      path = "/json/stations/search?" + p.toString();
-    } else if (rb.country) {
-      path = `/json/stations/bycountrycodeexact/${encodeURIComponent(rb.country.code)}?${p}`;
-    } else {
-      path = "/json/stations/topvote/" + RB_PAGE;
+    if (!list || !rb.country) return;
+    list.innerHTML = `<div class="empty">Loading stations...</div>`;
+
+    if (rb.country.id && this._entityId) {
+      try {
+        const res = await this._haBrowse(rb.country.id);
+        const rows = ((res && res.children) || [])
+          .filter((c) => c.can_play && c.media_content_id)
+          .map((c) => ({
+            name: c.title,
+            playId: c.media_content_id,
+            playType: c.media_content_type || "music",
+            favicon: c.thumbnail || null,
+            meta: rb.country.name,
+          }));
+        if (rows.length) {
+          rb.stations = rows;
+          this._rbSetSource(el, "ha");
+          return this._rbRenderList(el);
+        }
+      } catch (err) {
+        console.warn("[retro-player-card] HA station list failed, trying the API", err);
+      }
     }
 
     try {
-      const raw = await this._rbApi(path);
-      const batch = (raw || [])
-        .filter((s) => s && s.name && (s.url_resolved || s.url))
-        .map((s) => ({
-          name: s.name.trim(),
-          url: s.url_resolved || s.url,
-          favicon: s.favicon || null,
-          country: s.country || "",
-          codec: s.codec || "",
-          bitrate: s.bitrate || 0,
-          tags: (s.tags || "").split(",").filter(Boolean).slice(0, 3).join(", "),
-        }));
-      rb.stations = reset ? batch : rb.stations.concat(batch);
-      rb.more = batch.length === RB_PAGE && path.indexOf("/topvote/") === -1;
-      rb.error = null;
+      const raw = await this._rbApi(
+        `/json/stations/bycountrycodeexact/${encodeURIComponent(rb.country.code)}` +
+          `?hidebroken=true&order=votes&reverse=true&limit=1000`,
+      );
+      rb.stations = this._rbMapApiStations(raw);
+      this._rbSetSource(el, "api");
       this._rbRenderList(el);
     } catch (err) {
-      rb.error = err;
+      this._rbError(el, err);
+    }
+  }
+
+  _rbMapApiStations(raw) {
+    return (raw || [])
+      .filter((s) => s && s.name && (s.url_resolved || s.url))
+      .map((s) => ({
+        name: s.name.trim(),
+        playId: s.url_resolved || s.url,
+        playType: "music",
+        favicon: s.favicon || null,
+        meta: [s.codec, s.bitrate ? s.bitrate + "k" : "", s.country].filter(Boolean).join(" · "),
+      }));
+  }
+
+  /** Name search across all countries - needs the API or HA's search_media. */
+  async _rbSearchEverywhere(el) {
+    const rb = this._rb;
+    const query = rb.query.trim();
+    if (!query) return this._toast("Type something to search for first");
+    rb.view = "stations";
+    rb.country = null;
+    this._renderRadio(el);
+    const list = el.querySelector(".rb-list");
+    list.innerHTML = `<div class="empty">Searching for "${esc(query)}"...</div>`;
+
+    try {
+      const raw = await this._rbApi(
+        "/json/stations/search?" +
+          new URLSearchParams({
+            name: query,
+            hidebroken: "true",
+            order: "votes",
+            reverse: "true",
+            limit: "300",
+          }),
+      );
+      rb.stations = this._rbMapApiStations(raw);
+      this._rbSetSource(el, "api");
+      return this._rbRenderList(el);
+    } catch (err) {
+      console.warn("[retro-player-card] API search failed, trying HA", err);
+    }
+
+    try {
+      const res = await this._hass.callWS({
+        type: "media_player/search_media",
+        entity_id: this._entityId,
+        media_content_id: "media-source://radio_browser",
+        search_query: query,
+      });
+      rb.stations = ((res && res.result) || [])
+        .filter((c) => c.can_play && c.media_content_id)
+        .map((c) => ({
+          name: c.title,
+          playId: c.media_content_id,
+          playType: c.media_content_type || "music",
+          favicon: c.thumbnail || null,
+          meta: "",
+        }));
+      this._rbSetSource(el, "ha");
+      this._rbRenderList(el);
+    } catch (err) {
       this._rbError(el, err);
     }
   }
@@ -2058,29 +2161,27 @@ class RetroPlayerCard extends HTMLElement {
     if (!list) return;
     list.innerHTML = `
       <div class="empty">
-        Could not reach the Radio Browser API from this browser.<br />
-        <span class="sub">${esc((err && err.message) || "unknown error")}</span>
+        Could not load stations.<br />
+        <span class="sub">${esc((err && (err.message || err.error)) || "unknown error")}</span>
       </div>`;
     const hint = el.querySelector(".rb-hint");
     if (hint) {
-      hint.innerHTML = `Check that this device has internet access. You can also try the
-        <b>Radio Browser</b> entry in the media browser (📁), which goes through
-        Home Assistant instead.`;
+      hint.innerHTML = `Tried Home Assistant's <b>Radio Browser</b> integration and the
+        radio-browser.info API directly. Check that either Home Assistant or this
+        device can reach the internet, then press &#8635;.`;
     }
-    const more = el.querySelector(".rb-more");
-    if (more) more.innerHTML = "";
   }
 
   _rbRenderList(el) {
     const rb = this._rb;
     const list = el.querySelector(".rb-list");
-    const more = el.querySelector(".rb-more");
     const hint = el.querySelector(".rb-hint");
     if (!list) return;
     this._rbCrumbs(el);
+    this._rbSetSource(el, rb.backend);
+    const q = rb.query.trim().toLowerCase();
 
     if (rb.view === "countries") {
-      const q = rb.query.trim().toLowerCase();
       const rows = (rb.countries || []).filter(
         (c) => !q || c.name.toLowerCase().includes(q) || c.code.toLowerCase() === q,
       );
@@ -2091,11 +2192,12 @@ class RetroPlayerCard extends HTMLElement {
         <div class="item" data-i="${i}">
           <span class="idx">${esc(c.code)}</span>
           <span class="nm">${esc(c.name)}</span>
-          <span class="sub">${c.count} stations</span>
+          <span class="sub">${c.count ? c.count + " stations" : ""}</span>
         </div>`,
             )
             .join("")
-        : `<div class="empty">No country matches "${esc(rb.query)}". Press Enter to search stations instead.</div>`;
+        : `<div class="empty">No country matches "${esc(rb.query)}".
+             Press Enter to search station names instead.</div>`;
       list.querySelectorAll(".item").forEach((row) =>
         row.addEventListener("click", () => {
           rb.country = rows[Number(row.dataset.i)];
@@ -2104,14 +2206,13 @@ class RetroPlayerCard extends HTMLElement {
           this._renderRadio(el);
         }),
       );
-      if (more) more.innerHTML = "";
       if (hint)
-        hint.innerHTML = `${(rb.countries || []).length} countries. Pick one to list its stations,
-          or type a name and press Enter to search stations worldwide.`;
+        hint.innerHTML = `${(rb.countries || []).length} countries. Pick one, or type a name and
+          press Enter to search stations everywhere.`;
       return;
     }
 
-    const rows = rb.stations;
+    const rows = rb.stations.filter((s) => !q || s.name.toLowerCase().includes(q));
     list.innerHTML = rows.length
       ? rows
           .map(
@@ -2122,19 +2223,17 @@ class RetroPlayerCard extends HTMLElement {
             ? `<img class="thumb" src="${esc(s.favicon)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'" />`
             : `<span class="idx">${svg(ICONS.radio, 13)}</span>`
         }
-        <span class="nm" title="${esc(s.url)}">${esc(s.name)}</span>
-        <span class="sub">${esc(
-          [s.codec, s.bitrate ? s.bitrate + "k" : "", s.country, s.tags]
-            .filter(Boolean)
-            .join(" · "),
-        )}</span>
+        <span class="nm">${esc(s.name)}</span>
+        <span class="sub">${esc(s.meta || "")}</span>
         <span class="acts">
           <button class="iconbtn" data-act="fav" title="Add to favorites">${svg(ICONS.star, 13)}</button>
         </span>
       </div>`,
           )
           .join("")
-      : `<div class="empty">No stations found.</div>`;
+      : `<div class="empty">${
+          rb.stations.length ? `No station matches "${esc(rb.query)}".` : "No stations here."
+        }</div>`;
 
     list.querySelectorAll(".item").forEach((row) => {
       const st = rows[Number(row.dataset.i)];
@@ -2145,48 +2244,68 @@ class RetroPlayerCard extends HTMLElement {
           this._settings.favorites.push({
             id: uid(),
             name: st.name,
-            url: st.url,
-            media_content_type: "music",
+            media_content_id: st.playId,
+            media_content_type: st.playType,
             thumbnail: st.favicon || null,
-            genre: st.tags || st.country,
+            genre: st.meta || "",
           });
           this._saveSettings();
           this._toast("Added to favorites");
           return;
         }
-        this._playItem({ name: st.name, url: st.url, media_content_type: "music" });
+        this._playItem({
+          name: st.name,
+          media_content_id: st.playId,
+          media_content_type: st.playType,
+        });
         list.querySelectorAll(".item").forEach((r) => r.classList.toggle("active", r === row));
       });
     });
 
-    if (more) {
-      more.innerHTML = rb.more
-        ? `<button class="btn wide rb-more-btn">Load ${RB_PAGE} more</button>`
-        : "";
-      const btn = more.querySelector(".rb-more-btn");
-      if (btn)
-        btn.addEventListener("click", () => {
-          rb.offset += RB_PAGE;
-          this._rbLoadStations(el, false);
-        });
-    }
     if (hint)
-      hint.innerHTML = `${rows.length} stations shown, sorted by popularity. Click one to play it on
-        <b>${esc(this._entityId || "-")}</b>, or ⭐ to save it.`;
+      hint.innerHTML = `${rows.length} of ${rb.stations.length} stations. Type above to filter by
+        name, click one to play it on <b>${esc(this._entityId || "-")}</b>, or &#9733; to save it.`;
   }
 
   /* --- Media browser panel --- */
+
+  /**
+   * Spotify and Music Assistant do not register a `media-source://` provider -
+   * their libraries are browsable only on their own media_player entities.
+   * Find those entities so the panel can offer to jump straight to them.
+   */
+  _streamingPlayers() {
+    if (!this._hass) return [];
+    const ents = this._hass.entities || {};
+    const out = [];
+    for (const id of Object.keys(this._hass.states)) {
+      if (!id.startsWith("media_player.")) continue;
+      const platform = ((ents[id] && ents[id].platform) || "").toLowerCase();
+      const st = this._hass.states[id];
+      const app = (st.attributes.app_name || "").toLowerCase();
+      let kind = null;
+      if (platform === "spotify" || app === "spotify" || id.startsWith("media_player.spotify")) {
+        kind = "Spotify";
+      } else if (platform === "music_assistant" || platform === "mass") {
+        kind = "Music Assistant";
+      }
+      if (kind) out.push({ id, kind, name: st.attributes.friendly_name || id });
+    }
+    return out;
+  }
 
   _renderBrowser(el) {
     const supportsBrowse = this._supports(SUPPORT.BROWSE_MEDIA);
     el.innerHTML = `
       <div class="panel-head">
         <span class="panel-title">Browse media</span>
+        <span class="hint">v${CARD_VERSION} · ${esc(this._entityId || "no player")}</span>
         <span class="grow"></span>
         <button class="btn br-home" title="Root">${svg(ICONS.back, 13)} Root</button>
         <button class="btn br-reload" title="Reload">&#8635;</button>
       </div>
       <div class="chips shortcuts"></div>
+      <div class="chips players"></div>
       <div class="crumbs"></div>
       <div class="list browse-list">
         <div class="empty">${supportsBrowse ? "Loading..." : "This player does not support media browsing."}</div>
@@ -2197,8 +2316,10 @@ class RetroPlayerCard extends HTMLElement {
         <button class="btn url-fav" title="Save to favorites">${svg(ICONS.star, 13)}</button>
       </div>
       <div class="hint">
-        Sources listed here are the ones your player really offers - install
-        <b>Spotify</b> or <b>Music Assistant</b> and they show up on their own.
+        The chips above are your player's own sources. <b>Spotify and Music
+        Assistant do not publish a media source</b> - their libraries live on
+        their own player entities, so pick that entity (top right, or the
+        buttons above) to browse them.
         Direct stream URLs (mp3, aac, m3u8) play anywhere;
         <b>YouTube, SoundCloud and Bandcamp links are web pages, not streams</b>,
         so they need the <b>Media Extractor</b> integration${
@@ -2210,6 +2331,7 @@ class RetroPlayerCard extends HTMLElement {
     `;
 
     this._renderShortcuts(el);
+    this._renderStreamingChips(el);
 
     el.querySelector(".br-home").addEventListener("click", () => {
       this._browsePath = [];
@@ -2243,10 +2365,19 @@ class RetroPlayerCard extends HTMLElement {
    * ever point at sources that really exist for this entity - guessing
    * media-source ids produced dead buttons for anyone without that integration.
    */
+  /** True when a browse entry could plausibly contain music. */
+  _isAudioSource(ch) {
+    if (!this._settings.audioOnly) return true;
+    const id = String(ch.media_content_id || "").toLowerCase();
+    if (NON_MUSIC_SOURCES.some((h) => id.startsWith(h))) return false;
+    const cls = String(ch.children_media_class || ch.media_class || "").toLowerCase();
+    return !NON_MUSIC_CLASSES.has(cls);
+  }
+
   _renderShortcuts(el) {
     const host = el.querySelector(".shortcuts");
     if (!host) return;
-    const sources = this._rootSources || [];
+    const sources = (this._rootSources || []).filter((s) => this._isAudioSource(s));
     host.innerHTML = sources
       .map(
         (s, i) =>
@@ -2260,6 +2391,35 @@ class RetroPlayerCard extends HTMLElement {
           { id: s.media_content_id, type: s.media_content_type || "", title: s.title },
         ];
         this._loadBrowse(el);
+      }),
+    );
+  }
+
+  _renderStreamingChips(el) {
+    const host = el.querySelector(".players");
+    if (!host) return;
+    const players = this._streamingPlayers().filter((p) => p.id !== this._entityId);
+    host.innerHTML = players.length
+      ? players
+          .map(
+            (p, i) =>
+              `<button class="btn sp" data-i="${i}" title="${esc(p.id)}">${svg(
+                p.kind === "Spotify" ? ICONS.spotify : ICONS.note,
+                13,
+              )} Browse ${esc(p.kind)}: ${esc(p.name)}</button>`,
+          )
+          .join("")
+      : "";
+    host.querySelectorAll(".sp").forEach((b) =>
+      b.addEventListener("click", () => {
+        const p = players[Number(b.dataset.i)];
+        this._settings.entity = p.id;
+        this._saveSettings();
+        this._browsePath = [];
+        this._rootSources = null;
+        this._update();
+        this._renderPanel();
+        this._toast("Switched to " + p.name);
       }),
     );
   }
@@ -2322,7 +2482,10 @@ class RetroPlayerCard extends HTMLElement {
 
   _renderBrowseList(el, res) {
     const list = el.querySelector(".browse-list");
-    const children = (res && res.children) || [];
+    const atRoot = this._browsePath.length === 0;
+    const children = ((res && res.children) || []).filter(
+      (c) => !atRoot || this._isAudioSource(c),
+    );
     if (!children.length) {
       list.innerHTML = `<div class="empty">Nothing here.</div>`;
       return;
@@ -2437,7 +2600,8 @@ class RetroPlayerCard extends HTMLElement {
           <label class="check"><input type="checkbox" class="s-b-eq"${set.showEqButton ? " checked" : ""}/> Equalizer button</label>
           <label class="check"><input type="checkbox" class="s-b-pl"${set.showPlaylistButton ? " checked" : ""}/> Playlist button</label>
           <label class="check"><input type="checkbox" class="s-b-br"${set.showBrowserButton ? " checked" : ""}/> Browser button</label>
-          <label class="check"><input type="checkbox" class="s-b-rb"${set.showRadioButton ? " checked" : ""}/> Radio Browser button</label>
+          <label class="check"><input type="checkbox" class="s-b-rb"${set.showRadioButton ? " checked" : ""}/> Radio button</label>
+          <label class="check"><input type="checkbox" class="s-audio"${set.audioOnly ? " checked" : ""}/> Music sources only</label>
           <label class="check"><input type="checkbox" class="s-b-ps"${set.showPlayerSelect ? " checked" : ""}/> Player selector</label>
         </div>
 
@@ -2529,6 +2693,7 @@ class RetroPlayerCard extends HTMLElement {
       ".s-b-pl": "showPlaylistButton",
       ".s-b-br": "showBrowserButton",
       ".s-b-rb": "showRadioButton",
+      ".s-audio": "audioOnly",
       ".s-b-ps": "showPlayerSelect",
     };
     for (const [sel, key] of Object.entries(toggles)) {
@@ -2724,7 +2889,8 @@ class RetroPlayerCardEditor extends HTMLElement {
           ${check("show_eq", "Equalizer button")}
           ${check("show_playlist", "Playlist button")}
           ${check("show_browser", "Media browser button")}
-          ${check("show_radio", "Radio Browser button")}
+          ${check("show_radio", "Radio button")}
+          ${check("audio_only", "Music sources only")}
           ${check("show_player_select", "Player selector")}
           ${check("compact", "Compact layout", false)}
         </div>

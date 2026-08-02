@@ -17,7 +17,7 @@ vzhledu a exportem/importem nastavení.
 | 🎨 **8 témat + HA téma** | Classic Skin, Modern Dark, Neon Nights, Vaporwave, Terminal Green, Amber CRT, Light Minimal, Follow HA Theme |
 | ▶️ **Plné ovládání** | Play/pauza, stop, další/předchozí, shuffle, repeat, zapnutí/vypnutí, hlasitost, mute, přetáčení |
 | 🔊 **Výběr přehrávače** | Rozbalovací seznam všech `media_player` entit – hudbu pustíš kamkoliv |
-| 📻 **Radio Browser** | Vlastní panel: nejdřív seznam zemí, pak stanice; hledání země i stanice, řazení podle popularity |
+| 📻 **Rádio** | Vlastní panel: nejdřív země, pak stanice; hledání podle země i podle jména stanice, dva nezávislé zdroje dat |
 | 🎵 **Vlastní stanice** | 10 předvolených stanic + libovolná stream URL |
 | ⭐ **Oblíbené** | Ulož si co právě hraje, nebo cokoliv z prohlížeče médií; řazení, mazání |
 | 📁 **Prohlížeč médií** | Prochází vše, co HA nabízí – Spotify, Music Assistant, lokální média, TTS; zkratky se generují z reálné nabídky přehrávače |
@@ -84,6 +84,7 @@ show_eq: true
 show_playlist: true
 show_browser: true
 show_radio: true
+audio_only: true
 show_player_select: true
 compact: false
 storage_key: obyvak
@@ -115,7 +116,8 @@ stations:
 | `show_eq` | bool | `true` | Tlačítko ekvalizéru |
 | `show_playlist` | bool | `true` | Tlačítko playlistu / oblíbených |
 | `show_browser` | bool | `true` | Tlačítko prohlížeče médií |
-| `show_radio` | bool | `true` | Tlačítko panelu Radio Browser |
+| `show_radio` | bool | `true` | Tlačítko panelu Rádio |
+| `audio_only` | bool | `true` | Skrýt nehudební zdroje (kamery, Frigate, obrázky, TTS) |
 | `show_player_select` | bool | `true` | Rozbalovací výběr přehrávače |
 | `compact` | bool | `false` | Kompaktní (nižší) rozvržení |
 | `entities` | list | všechny | Omezení nabídky přehrávačů |
@@ -137,19 +139,31 @@ desetitisíce, načítá se to postupně:
 
 1. **Seznam zemí** s počtem stanic — psaním do pole se seznam okamžitě filtruje
    (funguje i kód země, např. `CZ`).
-2. **Klik na zemi** → její stanice seřazené podle popularity, po 150; tlačítkem
-   *Load more* se dotáhnou další.
-3. **Hledání stanice** — v seznamu stanic pole hledá podle názvu přímo v API,
-   ve vybrané zemi. Tlačítko *Search everywhere* hledá napříč všemi zeměmi.
+2. **Klik na zemi** → seznam jejích stanic.
+3. **Hledání stanice** — v seznamu stanic filtruje pole podle názvu okamžitě.
+   Tlačítko *Search everywhere* hledá podle jména napříč všemi zeměmi.
 4. Klik na stanici ji pustí, ⭐ ji uloží mezi oblíbené.
 
 ![Radio Browser panel](docs/images/panel-radio.png)
 
-**Karta se ptá Radio Browser API přímo z prohlížeče**, ne přes Home Assistant.
-Díky tomu rádia fungují i tehdy, když na HA server integrace `radio_browser`
-hlásí *„Error occurred while communicating with Radio Browser"*. Zkouší se
-postupně několik zrcadel (`de1`, `de2`, `nl1`, `at1`, `fi1`), první funkční si
-karta zapamatuje. Integraci `radio_browser` k tomuhle panelu **nepotřebuješ**.
+### Odkud se stanice berou
+
+Panel má dva zdroje a přepíná mezi nimi sám — v hlavičce je vidět, který zrovna
+odpověděl:
+
+1. **Home Assistant** (výchozí) — integrace `radio_browser`. Panel ale záměrně
+   **nesahá na kořen** `media-source://radio_browser`. Ten totiž dělá *pět*
+   dotazů na Radio Browser API najednou (populární, tagy, jazyky, lokální, země)
+   a když selže jediný z nich, celý výpis spadne na
+   *„Error occurred while communicating with Radio Browser"*. Panel jde rovnou
+   na `media-source://radio_browser/country`, což je **jeden** dotaz — a proto
+   funguje i tam, kde kořen padá.
+2. **radio-browser.info přímo z prohlížeče** — použije se, když HA cesta selže
+   nebo integraci vůbec nemáš. Zkouší zrcadla `de1`, `de2`, `nl1`, `at1`, `fi1`
+   a první funkční si zapamatuje.
+
+*Search everywhere* (hledání napříč zeměmi) jde vždy přes API, protože HA
+integrace hledání podle jména nenabízí ve všech verzích.
 
 ---
 
@@ -167,8 +181,17 @@ které už v Home Assistantu máš. Tlačítko 📁 (prohlížeč médií) autom
 | **Libovolný stream** | – | Pole „Paste a stream / media URL“ v prohlížeči médií |
 
 Zkratky nad seznamem se generují z toho, co tvůj přehrávač opravdu nabízí —
-nezobrazí se tedy nic, co nemáš nainstalované. Vše nalezené jde jedním
-kliknutím ⭐ uložit do oblíbených.
+nezobrazí se tedy nic, co nemáš nainstalované. **Nehudební zdroje se skrývají**
+(kamery, Frigate, obrázky, text-to-speech), protože je stejně nemá co přehrát;
+vypnout to jde přepínačem *Music sources only* v nastavení nebo
+`audio_only: false`.
+
+> **Spotify a Music Assistant nemají `media-source://`.** Jejich knihovna je
+> dostupná jen na jejich vlastní `media_player` entitě. Karta takové entity
+> pozná a nabídne nad seznamem tlačítko *Browse Spotify: …*, kterým se na ni
+> přepneš. Proto `media-source://spotify` hlásilo *Unknown media source*.
+
+Vše nalezené jde jedním kliknutím ⭐ uložit do oblíbených.
 
 | Prohlížeč médií | Rádia a oblíbené |
 |---|---|
@@ -251,6 +274,18 @@ Karta čte `supported_features` entity. Co přehrávač neumí, se vypne.
 **Kde jsou uložená nastavení?**
 V `localStorage` prohlížeče pod klíčem `ha-retro-player-card:<storage_key>`. Na jiném
 zařízení použij export/import.
+
+---
+
+## 🔄 Aktualizace
+
+HACS stažený soubor **neaktualizuje sám**. Po nové verzi:
+
+1. HACS → **Retro Media Player Card** → ⋮ → **Redownload**
+2. V prohlížeči tvrdý refresh (**Ctrl+Shift+R**), na mobilu smaž cache
+
+Jestli běží nová verze poznáš v prohlížeči médií (📁) — vlevo nahoře je verze
+karty a entita, na které právě prohlížíš. Aktuální je **v1.1.0**.
 
 ---
 
