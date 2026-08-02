@@ -353,6 +353,17 @@ předá zařízení a nic se nestane. Nainstaluj **Media Extractor** — karta p
 odkazy pošle přes `media_extractor.play_media`, který je nejdřív rozbalí na
 skutečný stream. Alternativa je přehrávač z **Music Assistant**.
 
+**Nefunguje hlasitost u Spotify.**
+Částečně normální. `SUPPORT_SPOTIFY` v Home Assistantu obsahuje `VOLUME_SET`, ale
+**`VOLUME_MUTE` ani `VOLUME_STEP` ne** — ztlumení přes Spotify entitu tedy nejde
+nikdy. A posuvník hlasitosti je aktivní jen tehdy, když Spotify **zrovna hraje**
+na Premium účtu (stejná podmínka jako u procházení). I když aktivní je, Spotify
+Web API umí měnit hlasitost jen na některých Connect zařízeních.
+
+Řešení: v seznamu vpravo nahoře přepni na **přehrávač, který zvuk skutečně
+vydává** (tvůj Kodi, Zahrada speaker…) a hlasitost ovládej na něm. Karta u
+zašedlého ovladače teď po najetí myší napíše, proč je vypnutý.
+
 **Proč jsou některá tlačítka šedá?**
 Karta čte `supported_features` entity. Co přehrávač neumí, se vypne.
 
@@ -370,7 +381,7 @@ HACS stažený soubor **neaktualizuje sám**. Po nové verzi:
 2. V prohlížeči tvrdý refresh (**Ctrl+Shift+R**), na mobilu smaž cache
 
 Jestli běží nová verze poznáš v prohlížeči médií (📁) — vlevo nahoře je verze
-karty a entita, na které právě prohlížíš. Aktuální je **v1.3.1**.
+karty a entita, na které právě prohlížíš. Aktuální je **v1.3.2**.
 
 ---
 

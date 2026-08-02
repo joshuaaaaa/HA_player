@@ -6,7 +6,7 @@
  * No build step required - this file is the source.
  */
 
-const CARD_VERSION = "1.3.1";
+const CARD_VERSION = "1.3.2";
 
 /* ------------------------------------------------------------------ *
  * Constants
@@ -1531,10 +1531,12 @@ class RetroPlayerCard extends HTMLElement {
     muteBtn.disabled = !this._supports(SUPPORT.VOLUME_MUTE);
     muteBtn.innerHTML = svg(muted ? ICONS.mute : ICONS.volume);
     muteBtn.setAttribute("aria-pressed", String(muted));
+    muteBtn.title = muteBtn.disabled ? this._noVolumeReason("mute") : "Mute";
 
     const vol = this._$(".vol");
     const lvl = this._attr("volume_level", null);
     vol.disabled = !this._supports(SUPPORT.VOLUME_SET);
+    vol.title = vol.disabled ? this._noVolumeReason("volume") : "Volume";
     if (!this._volDrag) {
       vol.value = lvl == null ? 0 : Math.round(lvl * 100);
       this._$(".volwrap .pct").textContent = lvl == null ? "--%" : `${Math.round(lvl * 100)}%`;
@@ -1895,6 +1897,25 @@ class RetroPlayerCard extends HTMLElement {
     btn.classList.toggle("fav-on", on);
     btn.title = on ? "Remove from favorites" : "Add to favorites";
     btn.innerHTML = svg(on ? ICONS.star : ICONS.starOff, 13);
+  }
+
+  /**
+   * Why a volume control is greyed out. Spotify is the common case: it never
+   * advertises VOLUME_MUTE at all, and advertises VOLUME_SET only for a
+   * Premium account that is currently playing on an unrestricted device.
+   */
+  _noVolumeReason(what) {
+    const id = this._entityId;
+    if (!id || !this._stateObj) return "No player selected";
+    const platform = (((this._hass.entities || {})[id] || {}).platform || "").toLowerCase();
+    if (platform === "spotify") {
+      return what === "mute"
+        ? "Spotify does not support muting through Home Assistant at all - " +
+            "use the volume slider, or control the speaker's own player entity"
+        : "Spotify only exposes volume while it is actively playing on a Premium " +
+            "account. To change the speaker's volume, select that player at the top right";
+    }
+    return `This player does not expose ${what} control right now`;
   }
 
   _hasService(domain, service) {
