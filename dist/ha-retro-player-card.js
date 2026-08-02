@@ -6,7 +6,7 @@
  * No build step required - this file is the source.
  */
 
-const CARD_VERSION = "1.3.3";
+const CARD_VERSION = "1.3.4";
 
 /* ------------------------------------------------------------------ *
  * Constants
@@ -2011,6 +2011,17 @@ class RetroPlayerCard extends HTMLElement {
     );
   }
 
+  /**
+   * The library panel lists what the player itself offers. Home Assistant
+   * media sources (cameras, Frigate, image upload, TTS, local media) belong in
+   * the media browser panel, not here.
+   */
+  _spKeep(c) {
+    if (!c) return false;
+    if (String(c.media_content_id || "").startsWith("media-source://")) return false;
+    return this._isAudioSource(c);
+  }
+
   _spotifyTarget() {
     const saved = this._settings.spotifyTarget;
     if (saved && this._hass.states[saved]) return saved;
@@ -2078,10 +2089,8 @@ class RetroPlayerCard extends HTMLElement {
     const via = this._spBrowseEntity();
     el.innerHTML = `
       <div class="panel-head">
-        <span class="panel-title">Spotify</span>
-        <span class="hint sp-src" title="Library is read from ${esc(via || "-")} - nothing plays there">${
-          via ? "library" : "no source"
-        }</span>
+        <span class="panel-title sp-title">Music</span>
+        <span class="hint sp-src" title="Read from ${esc(via || "-")} - nothing plays there"></span>
         <span class="grow"></span>
         <button class="btn sp-home" title="Top of the browse tree">${svg(ICONS.back, 13)} Top</button>
         <button class="btn sp-reload" title="Reload">&#8635;</button>
@@ -2266,7 +2275,7 @@ class RetroPlayerCard extends HTMLElement {
       // The first listing we land on is the library root - keep its folders as
       // one-click shortcuts (Playlists, Liked Songs, Albums, ...).
       if (!sp.homeItems) {
-        sp.homeItems = sp.items.filter((c) => c.can_expand);
+        sp.homeItems = sp.items.filter((c) => c.can_expand && this._spKeep(c));
         sp.homePath = sp.path.slice();
       }
       this._spRenderList(el);
@@ -2367,8 +2376,17 @@ class RetroPlayerCard extends HTMLElement {
     if (!list) return;
     this._spCrumbs(el);
     this._spQuick(el);
+    const titleEl = el.querySelector(".sp-title");
+    if (titleEl) {
+      const inSpotify =
+        this._spBrowseEntity() === this._spotifySource() ||
+        sp.path.some((p) => /spotify/i.test(p.title || ""));
+      titleEl.textContent = inSpotify ? "Spotify" : "Music library";
+    }
     const q = sp.searched ? "" : sp.query.trim().toLowerCase();
-    const rows = (sp.items || []).filter((c) => !q || (c.title || "").toLowerCase().includes(q));
+    const rows = (sp.items || [])
+      .filter((c) => this._spKeep(c))
+      .filter((c) => !q || (c.title || "").toLowerCase().includes(q));
 
     list.innerHTML = rows.length
       ? rows

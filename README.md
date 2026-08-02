@@ -198,6 +198,11 @@ Když přes Music Assistant, karta při prvním otevření rovnou skočí do jeh
 Spotify větve — i když ji MA schovává o úroveň níž pod složkou *Browse* /
 *Providers*. Tlačítkem *Top* se dostaneš na skutečný kořen.
 
+Panel ukazuje **jen hudební obsah daného přehrávače** — kamery, Frigate,
+obrázky, TTS ani ostatní `media-source://` zdroje se sem nedostanou, ty patří do
+prohlížeče médií (📁). Když zrovna neprocházíš Spotify větev, panel se poctivě
+jmenuje *Music library* místo *Spotify*.
+
 V panelu je jediný rozbalovací seznam — **Play on**, tedy kam se hudba pustí.
 Entitu, ze které se čte seznam, si karta vybírá sama; když by potřebovala
 přehodit, je volba **Browse Spotify via** v nastavení (⚙️ → Spotify).
@@ -351,6 +356,15 @@ hlasitost samy nehlásí zpátky v `volume_level`. Karta dřív při každé akt
 stavu posuvník srovnala na nulu, takže vypadal zaseknutě. Od v1.3.3 si drží
 hodnotu, kterou jsi naposledy poslal, dokud přehrávač neohlásí vlastní.
 
+**Při přehrávání se hudba sama zastaví, přepne na Bluetooth nebo ji „přebije" oznámení.**
+Tohle nedělá karta. Karta pošle na kliknutí **jedno** `media_player.play_media`
+a sama od sebe žádný příkaz neposílá — aktualizace stavu u ní nic nespouští.
+Když ti do reproduktoru přijde oznámení (TTS / announce z Home Assistantu nebo
+z Music Assistantu), reproduktor přepne vstup na oznámení a hudbu tím ukončí;
+u BT reproduktorů se navíc často přepne zdroj na Bluetooth. Řeší se to na straně
+Music Assistantu (nastavení *announcements* / *duck volume*) nebo tím, že
+oznámení posíláš na jiný reproduktor.
+
 **Obal alba bliká nebo se seká.**
 `entity_picture` v Home Assistantu obsahuje token, který se mění při každé
 aktualizaci stavu — karta proto obrázek načítala pořád dokola. Od v1.3.3 se
@@ -385,7 +399,7 @@ HACS stažený soubor **neaktualizuje sám**. Po nové verzi:
 2. V prohlížeči tvrdý refresh (**Ctrl+Shift+R**), na mobilu smaž cache
 
 Jestli běží nová verze poznáš v prohlížeči médií (📁) — vlevo nahoře je verze
-karty a entita, na které právě prohlížíš. Aktuální je **v1.3.3**.
+karty a entita, na které právě prohlížíš. Aktuální je **v1.3.4**.
 
 ---
 
