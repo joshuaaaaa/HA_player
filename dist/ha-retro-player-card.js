@@ -6,7 +6,7 @@
  * No build step required - this file is the source.
  */
 
-const CARD_VERSION = "1.3.0";
+const CARD_VERSION = "1.3.1";
 
 /* ------------------------------------------------------------------ *
  * Constants
@@ -2027,7 +2027,7 @@ class RetroPlayerCard extends HTMLElement {
     el.innerHTML = `
       <div class="panel-head">
         <span class="panel-title">Spotify</span>
-        <span class="hint sp-src">via ${esc(via || "-")}</span>
+        <span class="hint sp-src">list from ${esc(via || "-")}</span>
         <span class="grow"></span>
         <button class="btn sp-home" title="Top of the browse tree">${svg(ICONS.back, 13)} Top</button>
         <button class="btn sp-reload" title="Reload">&#8635;</button>
@@ -2041,6 +2041,11 @@ class RetroPlayerCard extends HTMLElement {
       <div class="row">
         <span class="hint">Play on</span>
         <select class="sp-target" style="flex:1 1 auto"></select>
+      </div>
+      <div class="row">
+        <span class="hint">Browse via</span>
+        <select class="sp-via" style="flex:1 1 auto"></select>
+        <span class="hint">list source only</span>
       </div>
       <div class="chips sp-quick"></div>
       <div class="crumbs sp-crumbs"></div>
@@ -2060,6 +2065,28 @@ class RetroPlayerCard extends HTMLElement {
       this._settings.spotifyTarget = target.value || null;
       this._saveSettings();
       this._spRenderList(el);
+    });
+
+    const viaSel = el.querySelector(".sp-via");
+    viaSel.innerHTML = this._players()
+      .filter((p) => this._canBrowse(p.id))
+      .map(
+        (p) => `<option value="${esc(p.id)}"${p.id === via ? " selected" : ""}>${esc(p.name)}</option>`,
+      )
+      .join("");
+    viaSel.addEventListener("change", () => {
+      this._settings.spotifyBrowseEntity = viaSel.value || null;
+      this._saveSettings();
+      this._sp = {
+        path: [],
+        items: null,
+        query: "",
+        searched: false,
+        dived: false,
+        homeItems: null,
+        homePath: [],
+      };
+      this._renderSpotify(el);
     });
 
     const q = el.querySelector(".sp-q");
@@ -2150,12 +2177,15 @@ class RetroPlayerCard extends HTMLElement {
     const cur = sp.path[sp.path.length - 1];
     try {
       const seq = (this._spSeq = (this._spSeq || 0) + 1);
-      const res = await this._ws({
-        type: "media_player/browse_media",
-        entity_id: via,
-        media_content_id: cur ? cur.id : "",
-        media_content_type: cur ? cur.type || "" : "",
-      });
+      // Both id and type must be omitted for the root. Sending empty strings
+      // makes players resolve "" as a real path - Kodi answered "Media not
+      // found: /".
+      const msg = { type: "media_player/browse_media", entity_id: via };
+      if (cur) {
+        msg.media_content_id = cur.id;
+        msg.media_content_type = cur.type || "";
+      }
+      const res = await this._ws(msg);
       if (seq !== this._spSeq) return;
       sp.items = (res && res.children) || [];
 
@@ -2163,7 +2193,38 @@ class RetroPlayerCard extends HTMLElement {
       // into its Spotify branch the first time instead of showing its own root.
       if (!cur && !sp.dived && via !== this._spotifySource()) {
         sp.dived = true;
-        const hit = sp.items.find((c) => c.can_expand && /spotify/i.test(c.title || ""));
+        const isSpotify = (c) => c.can_expand && /spotify/i.test(c.title || "");
+        let hit = sp.items.find(isSpotify);
+
+        // Music Assistant hides providers one level down, under a folder
+        // called something like "Browse" or "Sources".
+        if (!hit) {
+          const container = sp.items.find(
+            (c) => c.can_expand && /browse|provider|source|service/i.test(c.title || ""),
+          );
+          if (container) {
+            try {
+              const sub = await this._ws({
+                type: "media_player/browse_media",
+                entity_id: via,
+                media_content_id: container.media_content_id,
+                media_content_type: container.media_content_type || "",
+              });
+              const deep = ((sub && sub.children) || []).find(isSpotify);
+              if (deep) {
+                sp.path.push({
+                  id: container.media_content_id,
+                  type: container.media_content_type,
+                  title: container.title,
+                });
+                hit = deep;
+              }
+            } catch (e) {
+              /* stay at the root */
+            }
+          }
+        }
+
         if (hit) {
           sp.path.push({
             id: hit.media_content_id,
@@ -2340,9 +2401,9 @@ class RetroPlayerCard extends HTMLElement {
 
     const target = this._spotifyTarget();
     if (hint)
-      hint.innerHTML = `${rows.length} items. Playback goes to <b>${esc(target || "-")}</b>.
-        Spotify content only plays on Spotify Connect devices or players that
-        support it (for example Music Assistant with the Spotify provider).`;
+      hint.innerHTML = `${rows.length} items. The list is read from
+        <b>${esc(this._spBrowseEntity() || "-")}</b> (browsing only, nothing plays there);
+        playback goes to <b>${esc(target || "-")}</b>.`;
   }
 
   _spPlay(ch) {

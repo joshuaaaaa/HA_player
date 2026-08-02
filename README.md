@@ -195,7 +195,20 @@ jinak přehrávač z **Music Assistantu** se Spotify providerem, který knihovnu
 zvládne kdykoliv. V hlavičce panelu je vidět `via <entita>`.
 
 Když přes Music Assistant, karta při prvním otevření rovnou skočí do jeho
-Spotify větve. Tlačítkem *Top* se dostaneš na skutečný kořen.
+Spotify větve — i když ji MA schovává o úroveň níž pod složkou *Browse* /
+*Providers*. Tlačítkem *Top* se dostaneš na skutečný kořen.
+
+### Dvě různé věci: odkud se čte a kam se hraje
+
+V panelu jsou dva samostatné rozbalovací seznamy a **pletou se snadno**:
+
+| | Co dělá |
+|---|---|
+| **Browse via** | Jen **odkud se načítá seznam**. Na téhle entitě se nic nepřehrává. Nabízí se jen přehrávače, které umí `browse_media` |
+| **Play on** | **Kam se pustí hudba.** Může to být úplně jiný přehrávač — klidně takový, co procházet neumí |
+
+Takže `SPOTIFY list from media_player.kodi_obyvak` v hlavičce znamená pouze
+„seznam čtu přes Kodi" — přehrávat se bude tam, co máš v *Play on*.
 
 - **Zkratky knihovny** — nad seznamem je řádek tlačítek generovaný z toho, co
   daná entita v kořeni nabízí: **Playlists**, **Liked Songs**, **Albums**,
@@ -357,7 +370,7 @@ HACS stažený soubor **neaktualizuje sám**. Po nové verzi:
 2. V prohlížeči tvrdý refresh (**Ctrl+Shift+R**), na mobilu smaž cache
 
 Jestli běží nová verze poznáš v prohlížeči médií (📁) — vlevo nahoře je verze
-karty a entita, na které právě prohlížíš. Aktuální je **v1.3.0**.
+karty a entita, na které právě prohlížíš. Aktuální je **v1.3.1**.
 
 ---
 
