@@ -6,7 +6,7 @@
  * No build step required - this file is the source.
  */
 
-const CARD_VERSION = "1.3.2";
+const CARD_VERSION = "1.3.3";
 
 /* ------------------------------------------------------------------ *
  * Constants
@@ -1352,6 +1352,7 @@ class RetroPlayerCard extends HTMLElement {
 
     this._$(".player-select").addEventListener("change", (e) => {
       this._settings.entity = e.target.value || null;
+      this._volLocal = null;
       this._saveSettings();
       this._browseItems = null;
       this._browsePath = [];
@@ -1395,7 +1396,8 @@ class RetroPlayerCard extends HTMLElement {
     });
     const endVol = () => {
       this._volDrag = false;
-      this._service("volume_set", { volume_level: Number(vol.value) / 100 });
+      this._volLocal = Number(vol.value);
+      this._service("volume_set", { volume_level: this._volLocal / 100 });
     };
     vol.addEventListener("change", endVol);
 
@@ -1458,18 +1460,41 @@ class RetroPlayerCard extends HTMLElement {
     }
     sel.style.display = set.showPlayerSelect ? "" : "none";
 
-    // artwork
+    // Artwork. entity_picture carries a rotating token/cache-buster, so the
+    // raw string changes on every state update; swapping the background that
+    // often makes the browser refetch the image and the cover visibly flickers.
+    // Key on the stable part of the url plus what is actually playing instead.
     const art = this._$(".art");
     const pic = this._attr("entity_picture", null);
     art.classList.toggle("hidden", !set.showArtwork);
-    if (pic && pic !== art._pic) {
-      art._pic = pic;
-      art.style.backgroundImage = `url("${pic}")`;
-      art.innerHTML = "";
-    } else if (!pic && art._pic !== null) {
-      art._pic = null;
-      art.style.backgroundImage = "";
-      art.innerHTML = svg(ICONS.note, 26);
+    const picKey = pic
+      ? [
+          String(pic).split("?")[0],
+          this._attr("media_content_id", ""),
+          this._attr("media_title", ""),
+          this._attr("media_artist", ""),
+        ].join("|")
+      : null;
+    if (picKey !== art._picKey) {
+      art._picKey = picKey;
+      if (picKey) {
+        // Load first, swap once it is ready, so the old cover never blanks out.
+        const img = document.createElement("img");
+        img.onload = () => {
+          if (art._picKey !== picKey) return; // a newer track won the race
+          art.style.backgroundImage = `url("${pic}")`;
+          art.innerHTML = "";
+        };
+        img.onerror = () => {
+          if (art._picKey !== picKey) return;
+          art.style.backgroundImage = "";
+          art.innerHTML = svg(ICONS.note, 26);
+        };
+        img.src = pic;
+      } else {
+        art.style.backgroundImage = "";
+        art.innerHTML = svg(ICONS.note, 26);
+      }
     }
 
     // time + meta
@@ -1538,8 +1563,14 @@ class RetroPlayerCard extends HTMLElement {
     vol.disabled = !this._supports(SUPPORT.VOLUME_SET);
     vol.title = vol.disabled ? this._noVolumeReason("volume") : "Volume";
     if (!this._volDrag) {
-      vol.value = lvl == null ? 0 : Math.round(lvl * 100);
-      this._$(".volwrap .pct").textContent = lvl == null ? "--%" : `${Math.round(lvl * 100)}%`;
+      // Some players accept volume_set but never report volume_level back.
+      // Forcing the slider to 0 on every state update made it snap straight
+      // back and feel stuck, so keep the value we last sent instead.
+      const shown =
+        lvl != null ? Math.round(lvl * 100) : this._volLocal != null ? this._volLocal : 0;
+      vol.value = shown;
+      this._$(".volwrap .pct").textContent =
+        lvl != null || this._volLocal != null ? `${shown}%` : "--%";
     }
 
     // visualizer
@@ -2048,7 +2079,9 @@ class RetroPlayerCard extends HTMLElement {
     el.innerHTML = `
       <div class="panel-head">
         <span class="panel-title">Spotify</span>
-        <span class="hint sp-src">list from ${esc(via || "-")}</span>
+        <span class="hint sp-src" title="Library is read from ${esc(via || "-")} - nothing plays there">${
+          via ? "library" : "no source"
+        }</span>
         <span class="grow"></span>
         <button class="btn sp-home" title="Top of the browse tree">${svg(ICONS.back, 13)} Top</button>
         <button class="btn sp-reload" title="Reload">&#8635;</button>
@@ -2062,11 +2095,6 @@ class RetroPlayerCard extends HTMLElement {
       <div class="row">
         <span class="hint">Play on</span>
         <select class="sp-target" style="flex:1 1 auto"></select>
-      </div>
-      <div class="row">
-        <span class="hint">Browse via</span>
-        <select class="sp-via" style="flex:1 1 auto"></select>
-        <span class="hint">list source only</span>
       </div>
       <div class="chips sp-quick"></div>
       <div class="crumbs sp-crumbs"></div>
@@ -2086,28 +2114,6 @@ class RetroPlayerCard extends HTMLElement {
       this._settings.spotifyTarget = target.value || null;
       this._saveSettings();
       this._spRenderList(el);
-    });
-
-    const viaSel = el.querySelector(".sp-via");
-    viaSel.innerHTML = this._players()
-      .filter((p) => this._canBrowse(p.id))
-      .map(
-        (p) => `<option value="${esc(p.id)}"${p.id === via ? " selected" : ""}>${esc(p.name)}</option>`,
-      )
-      .join("");
-    viaSel.addEventListener("change", () => {
-      this._settings.spotifyBrowseEntity = viaSel.value || null;
-      this._saveSettings();
-      this._sp = {
-        path: [],
-        items: null,
-        query: "",
-        searched: false,
-        dived: false,
-        homeItems: null,
-        homePath: [],
-      };
-      this._renderSpotify(el);
     });
 
     const q = el.querySelector(".sp-q");
@@ -2422,9 +2428,7 @@ class RetroPlayerCard extends HTMLElement {
 
     const target = this._spotifyTarget();
     if (hint)
-      hint.innerHTML = `${rows.length} items. The list is read from
-        <b>${esc(this._spBrowseEntity() || "-")}</b> (browsing only, nothing plays there);
-        playback goes to <b>${esc(target || "-")}</b>.`;
+      hint.innerHTML = `${rows.length} items. Playback goes to <b>${esc(target || "-")}</b>.`;
   }
 
   _spPlay(ch) {

@@ -198,17 +198,9 @@ Když přes Music Assistant, karta při prvním otevření rovnou skočí do jeh
 Spotify větve — i když ji MA schovává o úroveň níž pod složkou *Browse* /
 *Providers*. Tlačítkem *Top* se dostaneš na skutečný kořen.
 
-### Dvě různé věci: odkud se čte a kam se hraje
-
-V panelu jsou dva samostatné rozbalovací seznamy a **pletou se snadno**:
-
-| | Co dělá |
-|---|---|
-| **Browse via** | Jen **odkud se načítá seznam**. Na téhle entitě se nic nepřehrává. Nabízí se jen přehrávače, které umí `browse_media` |
-| **Play on** | **Kam se pustí hudba.** Může to být úplně jiný přehrávač — klidně takový, co procházet neumí |
-
-Takže `SPOTIFY list from media_player.kodi_obyvak` v hlavičce znamená pouze
-„seznam čtu přes Kodi" — přehrávat se bude tam, co máš v *Play on*.
+V panelu je jediný rozbalovací seznam — **Play on**, tedy kam se hudba pustí.
+Entitu, ze které se čte seznam, si karta vybírá sama; když by potřebovala
+přehodit, je volba **Browse Spotify via** v nastavení (⚙️ → Spotify).
 
 - **Zkratky knihovny** — nad seznamem je řádek tlačítek generovaný z toho, co
   daná entita v kořeni nabízí: **Playlists**, **Liked Songs**, **Albums**,
@@ -353,6 +345,18 @@ předá zařízení a nic se nestane. Nainstaluj **Media Extractor** — karta p
 odkazy pošle přes `media_extractor.play_media`, který je nejdřív rozbalí na
 skutečný stream. Alternativa je přehrávač z **Music Assistant**.
 
+**Posuvníkem hlasitosti nejde hýbat / skáče zpět na nulu.**
+Některé přehrávače (typicky přes Music Assistant) přijmou `volume_set`, ale
+hlasitost samy nehlásí zpátky v `volume_level`. Karta dřív při každé aktualizaci
+stavu posuvník srovnala na nulu, takže vypadal zaseknutě. Od v1.3.3 si drží
+hodnotu, kterou jsi naposledy poslal, dokud přehrávač neohlásí vlastní.
+
+**Obal alba bliká nebo se seká.**
+`entity_picture` v Home Assistantu obsahuje token, který se mění při každé
+aktualizaci stavu — karta proto obrázek načítala pořád dokola. Od v1.3.3 se
+porovnává jen stabilní část adresy plus co hraje, a nový obal se překlopí
+až po dotažení.
+
 **Nefunguje hlasitost u Spotify.**
 Částečně normální. `SUPPORT_SPOTIFY` v Home Assistantu obsahuje `VOLUME_SET`, ale
 **`VOLUME_MUTE` ani `VOLUME_STEP` ne** — ztlumení přes Spotify entitu tedy nejde
@@ -381,7 +385,7 @@ HACS stažený soubor **neaktualizuje sám**. Po nové verzi:
 2. V prohlížeči tvrdý refresh (**Ctrl+Shift+R**), na mobilu smaž cache
 
 Jestli běží nová verze poznáš v prohlížeči médií (📁) — vlevo nahoře je verze
-karty a entita, na které právě prohlížíš. Aktuální je **v1.3.2**.
+karty a entita, na které právě prohlížíš. Aktuální je **v1.3.3**.
 
 ---
 
