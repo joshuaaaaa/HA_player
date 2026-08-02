@@ -19,6 +19,7 @@ vzhledu a exportem/importem nastavení.
 | 🔊 **Výběr přehrávače** | Rozbalovací seznam všech `media_player` entit – hudbu pustíš kamkoliv |
 | 📻 **Rádio** | Vlastní panel: nejdřív země, pak stanice; hledání podle země i podle jména stanice, dva nezávislé zdroje dat |
 | 🎵 **Vlastní stanice** | 10 předvolených stanic + libovolná stream URL |
+| 🟢 **Spotify panel** | Vlastní tlačítko: procházení knihovny, hledání, výběr cílového přehrávače, oblíbené |
 | ⭐ **Oblíbené** | Ulož si co právě hraje, nebo cokoliv z prohlížeče médií; řazení, mazání |
 | 📁 **Prohlížeč médií** | Prochází vše, co HA nabízí – Spotify, Music Assistant, lokální média, TTS; zkratky se generují z reálné nabídky přehrávače |
 | 🎚 **Ekvalizér** | 10pásmový EQ + preamp a 9 předvoleb; přepínání `sound_mode` přehrávače |
@@ -84,6 +85,7 @@ show_eq: true
 show_playlist: true
 show_browser: true
 show_radio: true
+show_spotify: true
 audio_only: true
 show_player_select: true
 compact: false
@@ -117,6 +119,7 @@ stations:
 | `show_playlist` | bool | `true` | Tlačítko playlistu / oblíbených |
 | `show_browser` | bool | `true` | Tlačítko prohlížeče médií |
 | `show_radio` | bool | `true` | Tlačítko panelu Rádio |
+| `show_spotify` | bool | `true` | Tlačítko panelu Spotify (skryje se, když Spotify entita neexistuje) |
 | `audio_only` | bool | `true` | Skrýt nehudební zdroje (kamery, Frigate, obrázky, TTS) |
 | `show_player_select` | bool | `true` | Rozbalovací výběr přehrávače |
 | `compact` | bool | `false` | Kompaktní (nižší) rozvržení |
@@ -169,6 +172,44 @@ integrace hledání podle jména nenabízí ve všech verzích.
 
 ---
 
+## 🟢 Spotify
+
+Tlačítko 🟢 otevře vlastní Spotify panel. Karta **nemá vlastní API klíče ani
+přihlašování** — používá `media_player` entitu z oficiální
+[Spotify integrace](https://www.home-assistant.io/integrations/spotify/), kterou
+si najde sama (podle platformy entity, jména nebo `app_name`).
+
+- **Procházení knihovny** — playlisty, Made For You, naposledy přehrané, alba…
+  s drobečkovou navigací
+- **Hledání** — tlačítko *Search* pošle dotaz do Home Assistantu
+  (`media_player/search_media`). Na starších verzích HA, které to neumí, karta
+  bez chyby přepne na filtrování aktuálního seznamu
+- **Play on** — rozbalovací seznam určuje, kam se hudba pošle. Výchozí je
+  samotná Spotify entita
+- **Hvězdičky** fungují stejně jako u rádií — barevná = uloženo
+
+![Spotify panel](docs/images/panel-spotify.png)
+
+> **Kam se dá Spotify pustit:** obsah Spotify přehraje jen zařízení, které to
+> umí — Spotify Connect reproduktor, samotná Spotify entita, nebo přehrávač
+> z **Music Assistant** se Spotify providerem. Poslat `spotify:` URI na obyčejný
+> Chromecast nebo Kodi nefunguje a karta to řekne.
+
+V nastavení (⚙️) je sekce **Spotify**, kde jde ručně vybrat účet (entitu) i
+výchozí cílový přehrávač, kdyby automatická detekce vybrala špatně.
+
+### Proč ne napřímo přes Spotify Web API
+
+Šlo by to napsat (OAuth s PKCE, bez klientského tajemství), ale Spotify u
+redirect URI **vyžaduje HTTPS** — jedinou výjimkou je `http://127.0.0.1`.
+Typické `http://192.168.x.x:8123` tedy Spotify odmítne zaregistrovat a
+přihlášení se nedá dokončit. Navíc by Web API dalo hlavně procházení a hledání;
+přehrávání přes něj vyžaduje Premium a míří jen na Spotify Connect zařízení,
+takže samotné pouštění hudby by stejně zůstalo na Home Assistantu — přesně jak
+to dělá tenhle panel.
+
+---
+
 ## 🎧 Propojení se Spotify, YouTube a rádii
 
 Karta záměrně **nemá vlastní účty ani API klíče** – používá přehrávače a zdroje médií,
@@ -177,7 +218,7 @@ které už v Home Assistantu máš. Tlačítko 📁 (prohlížeč médií) autom
 | Služba | Co nainstalovat | Jak to funguje |
 |---|---|---|
 | **Rádia** | [Radio Browser](https://www.home-assistant.io/integrations/radio_browser/) (oficiální integrace) | Prohledávání tisíců stanic podle země/žánru, přehrání na vybrané entitě |
-| **Spotify** | [Spotify integrace](https://www.home-assistant.io/integrations/spotify/) | V prohlížeči se objeví tvoje playlisty a alba; přehraje se na Spotify Connect zařízení |
+| **Spotify** | [Spotify integrace](https://www.home-assistant.io/integrations/spotify/) | Má vlastní panel 🟢 — viz sekce výše |
 | **YouTube / SoundCloud** | [Media Extractor](https://www.home-assistant.io/integrations/media_extractor/) nebo [Music Assistant](https://music-assistant.io/) | Odkaz na YouTube je **webová stránka, ne stream** — sám o sobě se nepřehraje. Když máš Media Extractor, karta ho pro takové odkazy použije automaticky |
 | **Lokální hudba** | Vestavěné `media_source` | Soubory z `config/media` |
 | **Libovolný stream** | – | Pole „Paste a stream / media URL“ v prohlížeči médií |
@@ -287,7 +328,7 @@ HACS stažený soubor **neaktualizuje sám**. Po nové verzi:
 2. V prohlížeči tvrdý refresh (**Ctrl+Shift+R**), na mobilu smaž cache
 
 Jestli běží nová verze poznáš v prohlížeči médií (📁) — vlevo nahoře je verze
-karty a entita, na které právě prohlížíš. Aktuální je **v1.1.0**.
+karty a entita, na které právě prohlížíš. Aktuální je **v1.2.0**.
 
 ---
 

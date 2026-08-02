@@ -6,7 +6,7 @@
  * No build step required - this file is the source.
  */
 
-const CARD_VERSION = "1.1.0";
+const CARD_VERSION = "1.2.0";
 
 /* ------------------------------------------------------------------ *
  * Constants
@@ -32,6 +32,7 @@ const SUPPORT = {
   BROWSE_MEDIA: 131072,
   REPEAT_SET: 262144,
   GROUPING: 524288,
+  SEARCH_MEDIA: 1048576,
 };
 
 const THEMES = {
@@ -380,6 +381,9 @@ const DEFAULT_SETTINGS = {
   showPlaylistButton: true,
   showBrowserButton: true,
   showRadioButton: true,
+  showSpotifyButton: true,
+  spotifyEntity: null,
+  spotifyTarget: null,
   audioOnly: true,
   showPlayerSelect: true,
   compact: false,
@@ -1025,6 +1029,7 @@ class RetroPlayerCard extends HTMLElement {
     this._browseLoading = false;
     this._rootSources = null;
     this._rbServer = null;
+    this._sp = { path: [], items: null, query: "", searched: false };
     this._rb = {
       view: "countries",
       country: null,
@@ -1057,6 +1062,7 @@ class RetroPlayerCard extends HTMLElement {
       show_playlist: true,
       show_browser: true,
       show_radio: true,
+      show_spotify: true,
       audio_only: true,
       show_player_select: true,
       compact: false,
@@ -1079,6 +1085,7 @@ class RetroPlayerCard extends HTMLElement {
       showPlaylistButton: this._config.show_playlist,
       showBrowserButton: this._config.show_browser,
       showRadioButton: this._config.show_radio,
+      showSpotifyButton: this._config.show_spotify,
       audioOnly: this._config.audio_only,
       showPlayerSelect: this._config.show_player_select,
       compact: this._config.compact,
@@ -1259,7 +1266,8 @@ class RetroPlayerCard extends HTMLElement {
           <select class="player-select" title="Playback device"></select>
           <button class="tbtn" data-panel="eq" title="Equalizer">${svg(ICONS.eq, 14)}</button>
           <button class="tbtn" data-panel="playlist" title="Playlist / favorites">${svg(ICONS.list, 14)}</button>
-          <button class="tbtn" data-panel="radio" title="Radio Browser">${svg(ICONS.radio, 14)}</button>
+          <button class="tbtn" data-panel="radio" title="Radio">${svg(ICONS.radio, 14)}</button>
+          <button class="tbtn" data-panel="spotify" title="Spotify">${svg(ICONS.spotify, 14)}</button>
           <button class="tbtn" data-panel="browser" title="Browse media">${svg(ICONS.folder, 14)}</button>
           <button class="tbtn" data-panel="settings" title="Settings">${svg(ICONS.gear, 14)}</button>
         </div>
@@ -1551,6 +1559,7 @@ class RetroPlayerCard extends HTMLElement {
       playlist: set.showPlaylistButton,
       browser: set.showBrowserButton,
       radio: set.showRadioButton,
+      spotify: set.showSpotifyButton && !!this._spotifySource(),
       settings: true,
     };
     this._$$(".tbtn[data-panel]").forEach((b) => {
@@ -1636,6 +1645,7 @@ class RetroPlayerCard extends HTMLElement {
     else if (this._panel === "playlist") this._renderPlaylist(el);
     else if (this._panel === "browser") this._renderBrowser(el);
     else if (this._panel === "radio") this._renderRadio(el);
+    else if (this._panel === "spotify") this._renderSpotify(el);
     else if (this._panel === "settings") this._renderSettings(el);
   }
 
@@ -1923,6 +1933,261 @@ class RetroPlayerCard extends HTMLElement {
     this._service("play_media", data).then(() =>
       this._toast("Playing: " + (item.name || id)),
     );
+  }
+
+  /* --- Spotify panel --- */
+
+  /**
+   * The Spotify integration exposes its library on its own media_player
+   * entity rather than as a media source, so everything here browses that
+   * entity. Playback is then sent to whichever player the user picked.
+   */
+  _spotifySource() {
+    if (!this._hass) return null;
+    const saved = this._settings.spotifyEntity;
+    if (saved && this._hass.states[saved]) return saved;
+    const ents = this._hass.entities || {};
+    const ids = Object.keys(this._hass.states).filter((id) => id.startsWith("media_player."));
+    return (
+      ids.find((id) => ((ents[id] || {}).platform || "").toLowerCase() === "spotify") ||
+      ids.find((id) => id.startsWith("media_player.spotify")) ||
+      ids.find(
+        (id) => (this._hass.states[id].attributes.app_name || "").toLowerCase() === "spotify",
+      ) ||
+      null
+    );
+  }
+
+  _spotifyTarget() {
+    const saved = this._settings.spotifyTarget;
+    if (saved && this._hass.states[saved]) return saved;
+    return this._spotifySource();
+  }
+
+  _renderSpotify(el) {
+    const src = this._spotifySource();
+    const sp = this._sp;
+    if (!src) {
+      el.innerHTML = `<div class="panel-head"><span class="panel-title">Spotify</span></div>
+        <div class="empty">No Spotify player entity found. Add the Spotify integration
+        in Home Assistant, then reopen this panel.</div>`;
+      return;
+    }
+
+    el.innerHTML = `
+      <div class="panel-head">
+        <span class="panel-title">Spotify</span>
+        <span class="hint sp-src">${esc(src)}</span>
+        <span class="grow"></span>
+        <button class="btn sp-home" title="Library root">${svg(ICONS.back, 13)} Library</button>
+        <button class="btn sp-reload" title="Reload">&#8635;</button>
+      </div>
+      <div class="row">
+        ${svg(ICONS.search, 14)}
+        <input type="text" class="sp-q" style="flex:1 1 auto" value="${esc(sp.query)}"
+               placeholder="Search Spotify..." />
+        <button class="btn sp-go">Search</button>
+      </div>
+      <div class="row">
+        <span class="hint">Play on</span>
+        <select class="sp-target" style="flex:1 1 auto"></select>
+      </div>
+      <div class="crumbs sp-crumbs"></div>
+      <div class="list sp-list"><div class="empty">Loading...</div></div>
+      <div class="hint sp-hint"></div>
+    `;
+
+    const target = el.querySelector(".sp-target");
+    const chosen = this._spotifyTarget();
+    target.innerHTML = this._players()
+      .map(
+        (p) =>
+          `<option value="${esc(p.id)}"${p.id === chosen ? " selected" : ""}>${esc(p.name)}</option>`,
+      )
+      .join("");
+    target.addEventListener("change", () => {
+      this._settings.spotifyTarget = target.value || null;
+      this._saveSettings();
+      this._spRenderList(el);
+    });
+
+    const q = el.querySelector(".sp-q");
+    q.addEventListener("input", () => {
+      sp.query = q.value;
+      if (sp.searched) return;
+      this._spRenderList(el);
+    });
+    q.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") this._spSearch(el);
+    });
+    el.querySelector(".sp-go").addEventListener("click", () => this._spSearch(el));
+    el.querySelector(".sp-home").addEventListener("click", () => {
+      sp.path = [];
+      sp.query = "";
+      sp.searched = false;
+      this._spLoad(el);
+    });
+    el.querySelector(".sp-reload").addEventListener("click", () => this._spLoad(el));
+
+    this._spLoad(el);
+  }
+
+  _spCrumbs(el) {
+    const sp = this._sp;
+    const c = el.querySelector(".sp-crumbs");
+    if (!c) return;
+    const parts = [`<button data-i="-1">Library</button>`].concat(
+      sp.searched
+        ? [`<span>/</span><span>Search: ${esc(sp.query)}</span>`]
+        : sp.path.map(
+            (p, i) => `<span>/</span><button data-i="${i}">${esc(p.title || "...")}</button>`,
+          ),
+    );
+    c.innerHTML = parts.join("");
+    c.querySelectorAll("button").forEach((b) =>
+      b.addEventListener("click", () => {
+        const i = Number(b.dataset.i);
+        sp.path = i < 0 ? [] : sp.path.slice(0, i + 1);
+        sp.searched = false;
+        this._spLoad(el);
+      }),
+    );
+  }
+
+  async _spLoad(el) {
+    const sp = this._sp;
+    const list = el.querySelector(".sp-list");
+    if (!list) return;
+    sp.searched = false;
+    list.innerHTML = `<div class="empty">Loading...</div>`;
+    const cur = sp.path[sp.path.length - 1];
+    const msg = {
+      type: "media_player/browse_media",
+      entity_id: this._spotifySource(),
+      media_content_id: cur ? cur.id : "",
+      media_content_type: cur ? cur.type || "" : "",
+    };
+    try {
+      const res = await this._hass.callWS(msg);
+      sp.items = (res && res.children) || [];
+      this._spRenderList(el);
+    } catch (err) {
+      console.error("[retro-player-card] spotify browse failed", err);
+      list.innerHTML = `<div class="empty">Could not load your Spotify library.<br />
+        <span class="sub">${esc((err && (err.message || err.error)) || "unknown error")}</span></div>`;
+      this._spCrumbs(el);
+    }
+  }
+
+  async _spSearch(el) {
+    const sp = this._sp;
+    const query = sp.query.trim();
+    if (!query) return this._toast("Type something to search for first");
+    const list = el.querySelector(".sp-list");
+    list.innerHTML = `<div class="empty">Searching Spotify for "${esc(query)}"...</div>`;
+    try {
+      const res = await this._hass.callWS({
+        type: "media_player/search_media",
+        entity_id: this._spotifySource(),
+        search_query: query,
+      });
+      sp.items = (res && res.result) || [];
+      sp.searched = true;
+      this._spRenderList(el);
+    } catch (err) {
+      console.warn("[retro-player-card] spotify search failed", err);
+      sp.searched = false;
+      this._spRenderList(el);
+      this._toast("Search needs a newer Home Assistant - filtering this list instead");
+    }
+  }
+
+  _spRenderList(el) {
+    const sp = this._sp;
+    const list = el.querySelector(".sp-list");
+    const hint = el.querySelector(".sp-hint");
+    if (!list) return;
+    this._spCrumbs(el);
+    const q = sp.searched ? "" : sp.query.trim().toLowerCase();
+    const rows = (sp.items || []).filter((c) => !q || (c.title || "").toLowerCase().includes(q));
+
+    list.innerHTML = rows.length
+      ? rows
+          .map(
+            (c, i) => `
+      <div class="item" data-i="${i}">
+        ${
+          c.thumbnail
+            ? `<img class="thumb" src="${esc(c.thumbnail)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'" />`
+            : `<span class="idx">${c.can_expand ? "&#128193;" : "&#9835;"}</span>`
+        }
+        <span class="nm">${esc(c.title)}</span>
+        <span class="sub">${esc(c.media_class || "")}</span>
+        <span class="acts${c.can_play ? " always" : ""}">
+          ${c.can_play ? `<button class="iconbtn" data-act="play" title="Play">${svg(ICONS.play, 13)}</button>` : ""}
+          ${c.can_play ? this._favButton(c.media_content_id) : ""}
+        </span>
+      </div>`,
+          )
+          .join("")
+      : `<div class="empty">${
+          (sp.items || []).length ? `Nothing matches "${esc(sp.query)}".` : "Nothing here."
+        }</div>`;
+
+    list.querySelectorAll(".item").forEach((row) => {
+      const ch = rows[Number(row.dataset.i)];
+      row.addEventListener("click", (e) => {
+        const act = e.target.closest("[data-act]");
+        if (act) {
+          e.stopPropagation();
+          if (act.dataset.act === "play") this._spPlay(ch);
+          if (act.dataset.act === "fav") {
+            const on = this._toggleFav({
+              name: ch.title,
+              media_content_id: ch.media_content_id,
+              media_content_type: ch.media_content_type,
+              thumbnail: ch.thumbnail || null,
+              genre: "Spotify",
+            });
+            this._paintFav(act, on);
+          }
+          return;
+        }
+        if (ch.can_expand) {
+          this._sp.path.push({
+            id: ch.media_content_id,
+            type: ch.media_content_type,
+            title: ch.title,
+          });
+          this._sp.searched = false;
+          this._spLoad(el);
+        } else if (ch.can_play) {
+          this._spPlay(ch);
+        }
+      });
+    });
+
+    const target = this._spotifyTarget();
+    if (hint)
+      hint.innerHTML = `${rows.length} items. Playback goes to <b>${esc(target || "-")}</b>.
+        Spotify content only plays on Spotify Connect devices or players that
+        support it (for example Music Assistant with the Spotify provider).`;
+  }
+
+  _spPlay(ch) {
+    const target = this._spotifyTarget();
+    if (!target) return this._toast("Pick a player to play on");
+    this._hass
+      .callService("media_player", "play_media", {
+        entity_id: target,
+        media_content_id: ch.media_content_id,
+        media_content_type: ch.media_content_type,
+      })
+      .then(() => this._toast("Playing: " + ch.title))
+      .catch((err) => {
+        console.error("[retro-player-card] spotify play failed", err);
+        this._toast("That player cannot play Spotify content");
+      });
   }
 
   /* --- Radio Browser panel --- */
@@ -2582,6 +2847,7 @@ class RetroPlayerCard extends HTMLElement {
           <label class="check"><input type="checkbox" class="s-b-pl"${set.showPlaylistButton ? " checked" : ""}/> Playlist button</label>
           <label class="check"><input type="checkbox" class="s-b-br"${set.showBrowserButton ? " checked" : ""}/> Browser button</label>
           <label class="check"><input type="checkbox" class="s-b-rb"${set.showRadioButton ? " checked" : ""}/> Radio button</label>
+          <label class="check"><input type="checkbox" class="s-b-sp"${set.showSpotifyButton ? " checked" : ""}/> Spotify button</label>
           <label class="check"><input type="checkbox" class="s-audio"${set.audioOnly ? " checked" : ""}/> Music sources only</label>
           <label class="check"><input type="checkbox" class="s-b-ps"${set.showPlayerSelect ? " checked" : ""}/> Player selector</label>
         </div>
@@ -2597,6 +2863,31 @@ class RetroPlayerCard extends HTMLElement {
             </select>
           </label>
           <div class="hint">Card YAML entity: <code>${esc(this._config.entity || "-")}</code></div>
+        </div>
+
+        <div class="section">
+          <h4>Spotify</h4>
+          <label class="field">Spotify account entity
+            <select class="s-sp-src">
+              <option value="">(detect automatically)</option>
+              ${this._players()
+                .map((p) => opt(p.id, p.name, set.spotifyEntity || ""))
+                .join("")}
+            </select>
+          </label>
+          <label class="field">Play Spotify on
+            <select class="s-sp-tgt">
+              <option value="">(the Spotify entity itself)</option>
+              ${this._players()
+                .map((p) => opt(p.id, p.name, set.spotifyTarget || ""))
+                .join("")}
+            </select>
+          </label>
+          <div class="hint">
+            Detected: <code>${esc(this._spotifySource() || "none")}</code>.
+            Spotify plays only on Spotify Connect devices or players that support
+            it, such as Music Assistant with the Spotify provider.
+          </div>
         </div>
 
         <div class="section" style="grid-column:1/-1">
@@ -2674,6 +2965,7 @@ class RetroPlayerCard extends HTMLElement {
       ".s-b-pl": "showPlaylistButton",
       ".s-b-br": "showBrowserButton",
       ".s-b-rb": "showRadioButton",
+      ".s-b-sp": "showSpotifyButton",
       ".s-audio": "audioOnly",
       ".s-b-ps": "showPlayerSelect",
     };
@@ -2683,6 +2975,15 @@ class RetroPlayerCard extends HTMLElement {
         persist(false);
       });
     }
+    on(".s-sp-src", "change", (e) => {
+      set.spotifyEntity = e.target.value || null;
+      this._sp = { path: [], items: null, query: "", searched: false };
+      persist(false);
+    });
+    on(".s-sp-tgt", "change", (e) => {
+      set.spotifyTarget = e.target.value || null;
+      persist(false);
+    });
     on(".s-entity", "change", (e) => {
       set.entity = e.target.value || null;
       this._browseItems = null;
@@ -2871,6 +3172,7 @@ class RetroPlayerCardEditor extends HTMLElement {
           ${check("show_playlist", "Playlist button")}
           ${check("show_browser", "Media browser button")}
           ${check("show_radio", "Radio button")}
+          ${check("show_spotify", "Spotify button")}
           ${check("audio_only", "Music sources only")}
           ${check("show_player_select", "Player selector")}
           ${check("compact", "Compact layout", false)}
