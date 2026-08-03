@@ -399,7 +399,7 @@ HACS stažený soubor **neaktualizuje sám**. Po nové verzi:
 2. V prohlížeči tvrdý refresh (**Ctrl+Shift+R**), na mobilu smaž cache
 
 Jestli běží nová verze poznáš v prohlížeči médií (📁) — vlevo nahoře je verze
-karty a entita, na které právě prohlížíš. Aktuální je **v1.3.4**.
+karty a entita, na které právě prohlížíš. Aktuální je **v1.3.5**.
 
 ---
 
