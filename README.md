@@ -6,7 +6,7 @@ A custom Lovelace card for Home Assistant styled like a **turn-of-the-millennium
 skinned MP3 player** – with a visualizer, equalizer, internet radio, favourites,
 themes and settings export/import.
 
-![Retro Media Player Card](docs/images/hero.png)
+<img src="docs/images/hero.png" alt="Retro Media Player Card" width="50%">
 
 ---
 
@@ -152,7 +152,7 @@ thousands of stations, it loads them in steps:
    in your favourites** — saved ones are filled and coloured, unsaved ones are
    just a faint outline. Clicking toggles both ways, so you can remove it too.
 
-![Radio Browser panel](docs/images/panel-radio.png)
+<img src="docs/images/panel-radio.png" alt="Radio Browser panel" width="50%">
 
 ### Where the stations come from
 
@@ -226,7 +226,7 @@ overriding, use the **Browse Spotify via** option in settings (⚙️ → Spotif
   Spotify entity itself
 - **Stars** work the same as for radio — coloured = saved
 
-![Spotify panel](docs/images/panel-spotify.png)
+<img src="docs/images/panel-spotify.png" alt="Spotify panel" width="50%">
 
 > **Where Spotify can play:** Spotify content is only played by a device that
 > supports it — a Spotify Connect speaker, the Spotify entity itself, or a
@@ -306,7 +306,7 @@ Anything you find can be saved to favourites with a single ⭐ click.
 
 The theme is switched in the card's settings (⚙️) or with the `theme` key in YAML.
 
-![All eight themes](docs/images/themes.png)
+<img src="docs/images/themes.png" alt="All eight themes" width="50%">
 
 ---
 
