@@ -6,7 +6,7 @@ Vlastní Lovelace karta pro Home Assistant v **retro skin vzhledu MP3 přehráva
 z přelomu tisíciletí** – s vizualizací, ekvalizérem, rádii, oblíbenými, tématy
 vzhledu a exportem/importem nastavení.
 
-![Retro Media Player Card](docs/images/hero.png)
+<img src="docs/images/hero.png" alt="Retro Media Player Card" width="50%">
 
 ---
 
@@ -151,7 +151,7 @@ desetitisíce, načítá se to postupně:
    máš** — uložená svítí barevně, neuložená je jen slabý obrys. Klikem se
    přepíná oběma směry, takže se dá i odebrat.
 
-![Radio Browser panel](docs/images/panel-radio.png)
+<img src="docs/images/panel-radio.png" alt="Radio Browser panel" width="50%">
 
 ### Odkud se stanice berou
 
@@ -224,7 +224,7 @@ přehodit, je volba **Browse Spotify via** v nastavení (⚙️ → Spotify).
   samotná Spotify entita
 - **Hvězdičky** fungují stejně jako u rádií — barevná = uloženo
 
-![Spotify panel](docs/images/panel-spotify.png)
+<img src="docs/images/panel-spotify.png" alt="Spotify panel" width="50%">
 
 > **Kam se dá Spotify pustit:** obsah Spotify přehraje jen zařízení, které to
 > umí — Spotify Connect reproduktor, samotná Spotify entita, nebo přehrávač
@@ -302,7 +302,7 @@ Vše nalezené jde jedním kliknutím ⭐ uložit do oblíbených.
 
 Téma se přepíná v nastavení karty (⚙️) nebo klíčem `theme` v YAML.
 
-![Všech osm témat](docs/images/themes.png)
+<img src="docs/images/themes.png" alt="Všech osm témat" width="50%">
 
 ---
 
